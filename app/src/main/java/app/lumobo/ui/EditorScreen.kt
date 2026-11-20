@@ -150,7 +150,6 @@ private val BAR = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.
 
 /** Tools whose panel can be pulled up to show every control at once. */
 private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP)
-private val PANEL_H = 216.dp
 
 @Composable
 fun EditorScreen(
@@ -362,7 +361,7 @@ fun EditorScreen(
 
         // ── Control panel. Pull a tool's panel up to see all of its controls; pull the
         // handle on Films (or the tab bar) up for every tool.
-        // Panels are as tall as their controls (up to PANEL_H). One that has more controls
+        // Panels are as tall as their controls (up to panelH). One that has more controls
         // than fit can be pulled up until all of them show; pull down to shrink it again.
         val canExpand = panel !in FIXED && sheetState.overflow
         val open = sheetState.open
@@ -384,7 +383,18 @@ fun EditorScreen(
             onUp = { if (expandable()) sheetState.expanded = true },
             onDown = { sheetState.expanded = false },
         )
-        val maxPanel = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
+        val conf = LocalConfiguration.current
+        val maxPanel = (conf.screenHeightDp * 0.58f).dp
+        // Panel height follows the photo: a tall photo keeps the panel compact (pull up for
+        // more), a wide one leaves room for a taller panel. Tools shorter than that shrink to fit.
+        val (srcW, srcH) = editor.sourceSize
+        val g0 = editor.geo
+        val photoAspect = if (srcW > 0 && srcH > 0) {
+            val (rw, rh) = if (g0.rotation % 2 == 1) srcH to srcW else srcW to srcH
+            (rw * g0.width) / (rh * g0.height).coerceAtLeast(1f)
+        } else 0.75f
+        val photoH = (conf.screenWidthDp - 12) / photoAspect.coerceIn(0.4f, 3f)
+        val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(150f, conf.screenHeightDp * 0.42f).dp
         Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
             Box(
                 Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
@@ -400,9 +410,9 @@ fun EditorScreen(
             }
             Box(
                 Modifier.fillMaxWidth()
-                    // Same height for every tool, so the photo doesn't jump when switching;
-                    // a pulled-up panel grows (smoothly) to fit all of its controls.
-                    .then(if (open) Modifier.heightIn(min = PANEL_H, max = maxPanel) else Modifier.height(PANEL_H))
+                    // Up to panelH (Crop always fits whole); a pulled-up panel grows smoothly
+                    // to show all of its controls.
+                    .heightIn(max = if (open || panel == Tool.CROP) maxPanel else panelH)
                     .animateContentSize(androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing))
                     .nestedScroll(sheet)
                     .then(sheetDrag),

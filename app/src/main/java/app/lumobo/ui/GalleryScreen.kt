@@ -32,6 +32,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.material.icons.outlined.UnfoldMore
+import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -271,38 +273,48 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
         modifier = Modifier.fillMaxSize()
             .graphicsLayer { scaleX = pinchScale; scaleY = pinchScale; transformOrigin = pinchOrigin }
             .pointerInput(Unit) {
-                // Pinch in / out to show more or fewer photos per row. The grid scales live with
-                // the fingers; when it switches columns the scale is compensated so nothing jumps.
+                // Pinch to change photos per row, like Google Photos: the grid switches
+                // columns as soon as the pinch is clear, keeps the photo under your fingers
+                // in place, and eases in with a small zoom.
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    var pinched = false
+                    var acc = 1f
+                    var switched = false
                     do {
                         val ev = awaitPointerEvent(PointerEventPass.Initial)
                         if (ev.changes.count { it.pressed } >= 2) {
-                            if (!pinched) {
-                                pinched = true
-                                val c = ev.calculateCentroid()
-                                pinchOrigin = androidx.compose.ui.graphics.TransformOrigin(
-                                    (c.x / size.width).coerceIn(0f, 1f), (c.y / size.height).coerceIn(0f, 1f),
-                                )
-                            }
-                            pinchScale = (pinchScale * ev.calculateZoom()).coerceIn(0.7f, 1.5f)
                             ev.changes.forEach { it.consume() }
+                            if (switched) continue
+                            acc *= ev.calculateZoom()
+                            val cols = settings.gridColumns
+                            val next = when {
+                                acc > 1.18f && cols > 2 -> cols - 1
+                                acc < 0.85f && cols < 6 -> cols + 1
+                                else -> continue
+                            }
+                            switched = true
+                            val c = ev.calculateCentroid()
+                            // The photo under the fingers, and where inside it they are.
+                            val hitItem = gridState.layoutInfo.visibleItemsInfo.firstOrNull {
+                                c.x >= it.offset.x && c.x < it.offset.x + it.size.width &&
+                                    c.y >= it.offset.y && c.y < it.offset.y + it.size.height
+                            }
+                            val fy = hitItem?.let { (c.y - it.offset.y) / it.size.height.toFloat() } ?: 0f
+                            pinchOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                (c.x / size.width).coerceIn(0f, 1f), (c.y / size.height).coerceIn(0f, 1f),
+                            )
+                            settings.gridColumns = next
+                            scope.launch {
+                                if (hitItem != null) {
+                                    val newCell = size.width / next.toFloat()
+                                    gridState.scrollToItem(hitItem.index)
+                                    gridState.scrollBy(-(c.y - fy * newCell))
+                                }
+                                val from = if (next < cols) 0.92f else 1.08f
+                                androidx.compose.animation.core.animate(from, 1f, animationSpec = androidx.compose.animation.core.tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { v, _ -> pinchScale = v }
+                            }
                         }
                     } while (ev.changes.any { it.pressed })
-                    if (pinched) {
-                        // Settle: switch columns once, compensating the scale so the grid
-                        // continues smoothly from where the fingers left it.
-                        val cols = settings.gridColumns
-                        var sc = pinchScale
-                        if (sc > 1.12f && cols > 2) { settings.gridColumns = cols - 1; sc *= (cols - 1f) / cols }
-                        else if (sc < 0.9f && cols < 6) { settings.gridColumns = cols + 1; sc *= (cols + 1f) / cols }
-                        pinchScale = sc
-                        val from = pinchScale
-                        scope.launch {
-                            androidx.compose.animation.core.animate(from, 1f, animationSpec = androidx.compose.animation.core.spring(stiffness = 500f)) { v, _ -> pinchScale = v }
-                        }
-                    }
                 }
             },
     ) {
@@ -321,7 +333,7 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .aspectRatio(1f)
-                        .background(Palette.Surface)
+                        .background(Palette.Surface2)
                         .clickable { onClick(images, index) },
                 )
             }
@@ -341,15 +353,15 @@ private fun DateScroller(state: androidx.compose.foundation.lazy.grid.LazyGridSt
     val scrolling = state.isScrollInProgress
     LaunchedEffect(scrolling, dragging) {
         if (scrolling || dragging) visible = true
-        else { kotlinx.coroutines.delay(1200); visible = false }
+        else { kotlinx.coroutines.delay(2000); visible = false }
     }
     val total = months.size
     val first = state.firstVisibleItemIndex.coerceIn(0, total - 1)
     val frac = first.toFloat() / (total - 1).coerceAtLeast(1)
     val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "scroller")
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxHeight().width(160.dp).graphicsLayer { this.alpha = alpha }) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxHeight().width(180.dp).graphicsLayer { this.alpha = alpha }) {
         val trackPx = constraints.maxHeight.toFloat()
-        val handleH = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
+        val handleH = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
         val y = (trackPx - handleH) * frac
         Row(
             Modifier.align(Alignment.TopEnd).offset { androidx.compose.ui.unit.IntOffset(0, y.toInt()) },
@@ -364,13 +376,16 @@ private fun DateScroller(state: androidx.compose.foundation.lazy.grid.LazyGridSt
                 Spacer(Modifier.width(6.dp))
             }
             Box(
-                Modifier.padding(end = 4.dp).width(6.dp).height(44.dp).clip(RoundedCornerShape(3.dp))
-                    .background(if (dragging) Palette.Amber else Palette.TextDim),
-            )
+                Modifier.padding(end = 4.dp).width(30.dp).height(56.dp).clip(RoundedCornerShape(15.dp))
+                    .background(if (dragging) Palette.Amber else Palette.Surface3),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.UnfoldMore, null, tint = if (dragging) Palette.Bg else Palette.Text, modifier = Modifier.size(20.dp))
+            }
         }
         // Touch strip: 28dp at the right edge, active only while the handle shows.
         Box(
-            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(28.dp).pointerInput(total, visible) {
+            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(48.dp).pointerInput(total, visible) {
                 if (total == 0 || !visible) return@pointerInput
                 fun jump(py: Float) {
                     val pos = (py - handleH / 2f).coerceIn(0f, trackPx - handleH)
