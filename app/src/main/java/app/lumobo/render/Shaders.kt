@@ -205,6 +205,7 @@ uniform int uLeakStyle;
 uniform float uDistort;
 uniform float uCircle;
 uniform float uStar;
+uniform float uMist;
 uniform float uTilt;
 uniform float uFocusY;
 uniform float uFocusSize;
@@ -480,6 +481,13 @@ void main() {
     if (uBloomAmt > 0.0) {
         vec3 b = texture(uBloom, suv).rgb;
         lin = 1.0 - (1.0 - lin) * (1.0 - clamp(b * uBloomAmt * 1.4, 0.0, 1.0));
+    }
+    if (uMist > 0.0) {
+        // Black Pro-Mist: light scatters out of the highlights into a soft halo, and the
+        // scatter lifts the deepest shadows a touch, easing contrast without fogging the image.
+        vec3 b = texture(uBloom, suv).rgb;
+        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(b * uMist * 1.5, 0.0, 1.0));
+        lin = lin * (1.0 - 0.06 * uMist) + 0.012 * uMist;
     }
     if (uHalation > 0.0) {
         float h = dot(texture(uHal, suv).rgb, LUMA);

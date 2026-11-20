@@ -7,7 +7,7 @@
 
 <p align="center">
   <b>Film simulations, camera looks and a pro photo editor for Android.</b><br>
-  88 looks · pro editing tools · 10 lens recipes · grain, halation &amp; bloom · full-resolution export
+  103 looks · pro editing tools · 19 lens recipes · grain, halation &amp; bloom · full-resolution export
 </p>
 
 <p align="center">
@@ -50,7 +50,7 @@
 ## Features
 
 ### Looks
-- **88 looks in 10 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), **Fujifilm** simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), **Ricoh GR** image controls, **iPhone**-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), **Kodak** and **Fuji** film stocks, **cinema** stocks, **instant** film, **Ilford** B&amp;W, and **camera** styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
+- **103 looks in 12 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), **Fujifilm** simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), **Ricoh GR** image controls, **iPhone**-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), **Kodak** and **Fuji** film stocks (including infrared Aerochrome), **Agfa**, **Lomography** (LomoChrome Purple, Metropolis), **cinema** stocks and the 2383 print, **instant** film, **Ilford** B&amp;W, and **camera** styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
 - **Big, true-to-shape previews.** Every look is previewed on your own photo, in the photo's shape. Picking one shows what it does; tap it again for its **strength**, **frame** and **date stamp**.
 - **True to the stock.** Each film is checked against a ColorChecker chart for its contrast, casts, saturation and how it shifts skin, sky and foliage. Slide films build **dye density** (saturated colours get richer and darker, not brighter), and negative films get a gentle **lab scan**: like a minilab, each photo's exposure and colour balance are read first and partly corrected before the film's response.
 - **Film character.** Choose how much grain, halation and bloom every film starts with: **Off, Subtle, Natural or Dreamy**. Original always stays clean.
@@ -61,7 +61,7 @@
 - **Color:** temperature, tint, vibrance and saturation; an 8-band **HSL Mixer**; Lightroom-style **Color Grading** wheels for shadows, midtones and highlights.
 - **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Edge-aware, so sharpening and clarity never draw glowing halos.
 - **Effects:** grain (size and colour), halation, bloom, vignette, chromatic aberration and four light-leak styles.
-- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl. Star filters have a **threshold** (which lights sparkle), **rainbow** diffraction rays, and a **star eraser** brush to paint out lights you don't want to sparkle.
+- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic and amber streaks, prism rainbows, Pro-Mist and glimmer diffusion, a swirly Helios 44, a Holga toy lens, a dreamy Velvet portrait lens, tilt-shift, soft focus and Petzval swirl. Star filters have a **threshold** (which lights sparkle), **rainbow** diffraction rays, and a **star eraser** brush to paint out lights you don't want to sparkle.
 - **Crop like Lightroom:** aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), straighten dial, vertical and horizontal perspective, flips and 90° rotation. The frame stays put: drag to slide the photo, pinch to zoom it.
 - **Frames and imprints:** instant border, white border or 35mm film scan, plus a seven-segment LED date stamp in your colour and format.
 
@@ -134,6 +134,15 @@ adb install -r Lumobo.apk
 | **Tilt-Shift** | Miniature look with a sharp focus band. |
 | **Soft Focus** | Dreamy diffusion, like a vintage portrait lens. |
 | **Swirl** | Petzval-style swirling, soft edges. |
+| **Pro-Mist** | Black Pro-Mist diffusion. Highlights halo softly, contrast eases. |
+| **Glimmer** | Mist with fine sparkles, like a glimmer-glass filter. |
+| **Diffraction** | 8-point star that splits light into rainbow rays. |
+| **Sunburst** | Long 8-point rays for the sun and bright lamps. |
+| **Helios 44** | Swirly Soviet 50mm: soft swirl, colour fringing, vignette. |
+| **Holga** | Plastic toy lens: soft blurry corners and a heavy vignette. |
+| **Velvet** | Dreamy portrait lens: glowing, soft and luminous. |
+| **Prism** | Rainbow light streak from bright lights, like a prism filter. |
+| **Amber Streak** | Warm golden anamorphic flares across the frame. |
 
 ## The look library
 
@@ -177,6 +186,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Acros + Ye** | `A+Y` | Acros through a yellow filter. Gently deepened skies. |
 | **Acros + G** | `A+G` | Acros through a green filter. Smooth skin, lighter foliage. |
 | **Sepia** | `SEP` | Warm brown-toned monochrome. |
+| **Monochrome** | `FMO` | Fujifilm's standard black & white. Neutral, faithful grey tones. |
 
 ### Ricoh GR image controls
 
@@ -239,6 +249,8 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Ektachrome E100** | `E6` | Modern slide film. Clean, cool and vivid blues. |
 | **Tri-X 400** | `TX` | The photojournalist's B&W. Punchy contrast, honest grain. |
 | **T-Max 100** | `TMX` | Tabular-grain B&W. Smooth, sharp and modern. |
+| **Pro Image 100** | `PI` | Warm portrait stock made for hot climates. Gentle contrast, golden skin. |
+| **Aerochrome** | `AERO` | Infrared false colour. Leaves turn crimson and pink, skies go deep blue. |
 
 ### Fuji film stocks
 
@@ -249,6 +261,17 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Superia 400** | `S400` | Fuji's consumer classic. Cool greens and that tell-tale cyan shadow. |
 | **Pro 400H** | `400H` | Wedding-photographer favourite. Airy, minty greens, soft pastel skin. |
 | **Fujicolor C200** | `C200` | Cheap and cheerful. Slightly green, a little grainy, very lovable. |
+| **Natura 1600** | `N16` | Low-light legend. Cool, clean shadows and natural skin under any light. |
+| **Pro 160NS** | `160` | Soft studio negative. Natural skin, gentle greens, airy highlights. |
+
+### Agfa
+
+<img src="docs/examples/grid-agfa.jpg" alt="Agfa" width="100%">
+
+| Look | Code | Character |
+|---|---|---|
+| **Vista 200** | `AV2` | Agfa's cheerful negative. Punchy reds, warm yellows, cyan-leaning skies. |
+| **Precisa 100** | `CT` | Agfa slide film. Cool, crisp and saturated with bright blues. |
 
 ### Cinema
 
@@ -261,6 +284,8 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Vision3 250D** | `250D` | Hollywood daylight negative. Wide latitude, natural skin, gentle teal. |
 | **Vision3 500T** | `500T` | Night-time cine negative. Cool shadows, warm practical lights. |
 | **Blockbuster** | `T&O` | Teal and orange colour grade. Big, warm skin against cool shadows. |
+| **2383 Print** | `2383` | Kodak print film. Rich blacks, teal shadows, warm skin: the classic cinema finish. |
+| **Vision3 50D** | `V50` | Kodak's finest daylight motion-picture stock. Clean, wide latitude, natural colour. |
 
 ### Instant
 
@@ -271,6 +296,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Polaroid 600** | `600` | Instant integral film. Creamy whites, inky blue-black, dreamy colour. |
 | **SX-70** | `SX` | Vintage instant. Warm, washed-out and soft-focus. |
 | **Instax Mini** | `MINI` | Bright, poppy party instant with cool shadows. |
+| **Expired Polaroid** | `EXP` | Out-of-date instant film. Faded magenta and teal shifts, creamy lifted blacks. |
 
 ### Camera styles
 
@@ -286,6 +312,16 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Lomo LC-A** | `LCA` | Shoot from the hip. Saturated, contrasty, heavy vignette. |
 | **Toy Camera** | `TOY` | Plastic lens, leaky body. Dreamy glow, soft corners, light leaks. |
 
+### Lomography
+
+<img src="docs/examples/grid-lomography.jpg" alt="Lomography" width="100%">
+
+| Look | Code | Character |
+|---|---|---|
+| **LomoChrome Purple** | `LCP` | Greens turn purple, blues turn teal, skin stays warm. |
+| **Metropolis** | `MET` | Desaturated urban film. Muted colour, punchy contrast, greenish shadows. |
+| **Color 800** | `L800` | Lomography's fast colour negative. Warm, punchy, saturated and grainy. |
+
 ### Ilford black & white
 
 <img src="docs/examples/grid-ilford.jpg" alt="Ilford black & white" width="100%">
@@ -296,6 +332,8 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **FP4 Plus 125** | `FP4` | Fine-grain, medium-contrast B&W with lovely mid-tones. |
 | **Pan F Plus 50** | `PANF` | Slow, razor-fine B&W. Deep blacks and luminous highlights. |
 | **Delta 3200** | `D32` | Ultra-fast B&W. Bold, gritty grain for low light. |
+| **XP2 Super** | `XP2` | Chromogenic B&W. Smooth tones, almost no grain, gentle contrast. |
+| **SFX 200** | `SFX` | Extended-red B&W. Dark skies, glowing foliage and skin, a near-infrared feel. |
 
 ## How it works
 
@@ -383,7 +421,7 @@ docs/                      Logo, examples, screenshots
 
 ## Disclaimer
 
-Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax, Lomo, Apple and iPhone are trademarks of their respective owners. Lumobo is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
+Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax, Lomo, Lomography, LomoChrome, Agfa, Apple and iPhone are trademarks of their respective owners. Lumobo is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
 
 ## License
 

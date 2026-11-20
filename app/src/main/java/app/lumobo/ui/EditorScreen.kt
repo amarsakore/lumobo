@@ -903,7 +903,7 @@ private fun LensPanel(editor: EditorController) {
             if (f.distortion > 0f || selected in listOf(LensPreset.FISHEYE, LensPreset.CIRCLE, LensPreset.WIDE)) {
                 FilmSlider("Distortion", f.distortion, { editor.updateFx(f.copy(distortion = it)) }, min = 0f, max = 1f, default = 0f)
             }
-            if (f.star > 0f || selected in listOf(LensPreset.TWINKLE, LensPreset.STARBURST, LensPreset.SPARKLE)) {
+            if (f.star > 0f || selected in listOf(LensPreset.TWINKLE, LensPreset.STARBURST, LensPreset.SPARKLE, LensPreset.GLIMMER, LensPreset.DIFFRACTION, LensPreset.SUNBURST)) {
                 FilmSlider("Glint", f.star, { editor.updateFx(f.copy(star = it)) }, min = 0f, max = 1f, default = 0f)
                 // Higher threshold: only the very brightest points sparkle.
                 FilmSlider("Threshold", f.starThreshold, { editor.updateFx(f.copy(starThreshold = it)) }, min = 0.3f, max = 0.95f, default = 0.6f,
@@ -916,8 +916,14 @@ private fun LensPanel(editor: EditorController) {
                     items(listOf(4, 6, 8)) { n -> Chip("$n points", f.starPoints == n, { editor.updateFx(f.copy(starPoints = n)) }) }
                 }
             }
-            if (f.streak > 0f || selected == LensPreset.ANAMORPHIC) {
+            if (f.mist > 0f || selected in listOf(LensPreset.PROMIST, LensPreset.GLIMMER, LensPreset.VELVET)) {
+                FilmSlider("Mist", f.mist, { editor.updateFx(f.copy(mist = it)) }, min = 0f, max = 1f, default = 0f)
+            }
+            if (f.streak > 0f || selected in listOf(LensPreset.ANAMORPHIC, LensPreset.PRISM, LensPreset.AMBER)) {
                 FilmSlider("Streak", f.streak, { editor.updateFx(f.copy(streak = it)) }, min = 0f, max = 1f, default = 0f)
+                FilmSlider("Streak colour", f.streakWarm, { editor.updateFx(f.copy(streakWarm = it)) }, min = 0f, max = 1f, default = 0f,
+                    format = { if (it < 0.34f) "Blue" else if (it < 0.67f) "Neutral" else "Amber" })
+                if (f.star <= 0f) FilmSlider("Rainbow", f.starSpectral, { editor.updateFx(f.copy(starSpectral = it)) }, min = 0f, max = 1f, default = 0f)
                 if (f.star <= 0f) {
                     FilmSlider("Threshold", f.starThreshold, { editor.updateFx(f.copy(starThreshold = it)) }, min = 0.3f, max = 0.95f, default = 0.6f,
                         format = { "${((it - 0.3f) / 0.65f * 100).roundToInt()}" })
@@ -965,6 +971,23 @@ private fun LensIcon(preset: LensPreset, color: Color) {
             LensPreset.TILT -> { for (i in 0..4) { val y = size.height * (0.1f + i * 0.2f); drawLine(color.copy(alpha = if (i == 2) 1f else 0.35f), Offset(0f, y), Offset(size.width, y), if (i == 2) 2.5.dp.toPx() else 4.dp.toPx()) } }
             LensPreset.SOFT -> { for (i in 4 downTo 1) drawCircle(color.copy(alpha = 0.18f * (5 - i)), r * i / 4.5f, c) }
             LensPreset.SWIRL -> { for (i in 1..3) drawArc(color, 40f * i, 220f, false, Offset(c.x - r * i / 3.2f, c.y - r * i / 3.2f), Size(r * 2 * i / 3.2f, r * 2 * i / 3.2f), style = st) }
+            LensPreset.PROMIST -> { for (i in 5 downTo 1) drawCircle(color.copy(alpha = 0.12f * (6 - i)), r * (0.2f + i * 0.15f), c); drawCircle(color, r * 0.18f, c) }
+            LensPreset.GLIMMER -> { for (i in 4 downTo 1) drawCircle(color.copy(alpha = 0.1f * (5 - i)), r * i / 4.2f, c); star(4, 0.75f) }
+            LensPreset.DIFFRACTION -> { star(8, 0.95f); drawCircle(color, r * 0.55f, c, style = Stroke(1.dp.toPx())) }
+            LensPreset.SUNBURST -> { star(8, 1f); drawCircle(color, r * 0.3f, c) }
+            LensPreset.HELIOS -> { drawCircle(color, r * 0.9f, c, style = st); for (i in 1..2) drawArc(color, 30f + 60f * i, 200f, false, Offset(c.x - r * i / 2.6f, c.y - r * i / 2.6f), Size(r * 2 * i / 2.6f, r * 2 * i / 2.6f), style = st) }
+            LensPreset.HOLGA -> {
+                drawRoundRect(color, Offset(c.x - r * 0.85f, c.y - r * 0.85f), Size(r * 1.7f, r * 1.7f), androidx.compose.ui.geometry.CornerRadius(r * 0.25f), style = st)
+                drawCircle(color.copy(alpha = 0.35f), r * 0.55f, c)
+                drawCircle(color, r * 0.28f, c, style = st)
+            }
+            LensPreset.VELVET -> { for (i in 4 downTo 1) drawCircle(color.copy(alpha = 0.16f * (5 - i)), r * i / 4f, c); drawCircle(color, r * 0.9f, c, style = Stroke(1.dp.toPx())) }
+            LensPreset.PRISM -> {
+                val p = androidx.compose.ui.graphics.Path().apply { moveTo(c.x, c.y - r * 0.75f); lineTo(c.x + r * 0.7f, c.y + r * 0.5f); lineTo(c.x - r * 0.7f, c.y + r * 0.5f); close() }
+                drawPath(p, color, style = st)
+                drawLine(color, Offset(0f, c.y + r * 0.05f), Offset(size.width, c.y - r * 0.2f), 1.6.dp.toPx())
+            }
+            LensPreset.AMBER -> { drawLine(color, Offset(0f, c.y), Offset(size.width, c.y), 3.dp.toPx()); drawLine(color.copy(alpha = 0.5f), Offset(size.width * 0.15f, c.y - r * 0.35f), Offset(size.width * 0.85f, c.y - r * 0.35f), 1.dp.toPx()); drawCircle(color, r * 0.24f, c) }
         }
     }
 }

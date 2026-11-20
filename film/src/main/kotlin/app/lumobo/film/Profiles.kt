@@ -7,9 +7,11 @@ enum class Category(val label: String) {
     IPHONE("iPhone"),
     KODAK("Kodak"),
     FUJI_STOCK("Fuji Film"),
+    AGFA("Agfa"),
     CINEMA("Cinema"),
     INSTANT("Instant"),
     CAMERAS("Cameras"),
+    LOMOGRAPHY("Lomography"),
     ILFORD("Ilford B&W"),
 }
 
@@ -42,6 +44,10 @@ data class Effects(
     val focusSize: Float = 0.25f,
     val softFocus: Float = 0f,
     val swirl: Float = 0f,
+    /** Pro-Mist style diffusion: highlights halo softly into their surroundings. */
+    val mist: Float = 0f,
+    /** Streak colour: 0 = cool anamorphic blue, 1 = warm amber. */
+    val streakWarm: Float = 0f,
     /** How bright a point must be to make a star or streak (0.6 = the classic 1.1 look). */
     val starThreshold: Float = 0.6f,
     /** Diffraction colour along the rays (0 = white, 1 = full rainbow). */
@@ -55,6 +61,7 @@ data class Effects(
         starPoints = o.starPoints, starLength = o.starLength, starAngle = o.starAngle, streak = o.streak,
         tiltShift = o.tiltShift, focusY = o.focusY, focusSize = o.focusSize, softFocus = o.softFocus, swirl = o.swirl,
         starMask = o.starMask, starThreshold = o.starThreshold, starSpectral = o.starSpectral,
+        mist = o.mist, streakWarm = o.streakWarm,
     )
 }
 
@@ -71,6 +78,15 @@ enum class LensPreset(val label: String, val blurb: String) {
     TILT("Tilt-Shift", "Miniature look with a sharp focus band."),
     SOFT("Soft Focus", "Dreamy diffusion, like a vintage portrait lens."),
     SWIRL("Swirl", "Petzval-style swirling, soft edges."),
+    PROMIST("Pro-Mist", "Black Pro-Mist diffusion. Highlights halo softly, contrast eases."),
+    GLIMMER("Glimmer", "Mist with fine sparkles, like a glimmer-glass filter."),
+    DIFFRACTION("Diffraction", "8-point star that splits light into rainbow rays."),
+    SUNBURST("Sunburst", "Long 8-point rays for the sun and bright lamps."),
+    HELIOS("Helios 44", "Swirly Soviet 50mm: soft swirl, colour fringing, vignette."),
+    HOLGA("Holga", "Plastic toy lens: soft blurry corners and a heavy vignette."),
+    VELVET("Velvet", "Dreamy portrait lens: glowing, soft and luminous."),
+    PRISM("Prism", "Rainbow light streak from bright lights, like a prism filter."),
+    AMBER("Amber Streak", "Warm golden anamorphic flares across the frame."),
     ;
 
     fun applyTo(fx: Effects): Effects {
@@ -88,6 +104,15 @@ enum class LensPreset(val label: String, val blurb: String) {
             TILT -> base.copy(tiltShift = 1f, focusY = 0.55f, focusSize = 0.22f)
             SOFT -> base.copy(softFocus = 0.6f, bloom = maxOf(fx.bloom, 0.3f))
             SWIRL -> base.copy(swirl = 0.8f, vignette = maxOf(fx.vignette, 0.3f))
+            PROMIST -> base.copy(mist = 0.55f)
+            GLIMMER -> base.copy(mist = 0.35f, star = 0.4f, starPoints = 4, starLength = 0.2f, starAngle = 0.25f, starThreshold = 0.7f)
+            DIFFRACTION -> base.copy(star = 0.6f, starPoints = 8, starLength = 0.5f, starAngle = 0.06f, starSpectral = 0.85f)
+            SUNBURST -> base.copy(star = 0.65f, starPoints = 8, starLength = 0.95f, starAngle = 0f, starThreshold = 0.7f)
+            HELIOS -> base.copy(swirl = 0.55f, softFocus = 0.12f, vignette = maxOf(fx.vignette, 0.3f), aberration = maxOf(fx.aberration, 0.3f))
+            HOLGA -> base.copy(distortion = 0.12f, swirl = 0.45f, softFocus = 0.15f, vignette = maxOf(fx.vignette, 0.65f))
+            VELVET -> base.copy(softFocus = 0.55f, mist = 0.45f)
+            PRISM -> base.copy(streak = 0.6f, starSpectral = 1f)
+            AMBER -> base.copy(streak = 0.7f, streakWarm = 1f)
         }
     }
 }
@@ -172,6 +197,8 @@ object Character {
         Category.INSTANT -> Effects(grain = 0.14f, grainSize = 0.30f, halation = 0.10f, bloom = 0.24f)
         Category.CAMERAS -> Effects(grain = 0.22f, grainSize = 0.38f, halation = 0.16f, bloom = 0.14f)
         Category.ILFORD -> Effects(grain = 0.34f, grainSize = 0.45f, halation = 0.10f, bloom = 0.06f)
+        Category.LOMOGRAPHY -> Effects(grain = 0.28f, grainSize = 0.44f, halation = 0.18f, bloom = 0.12f)
+        Category.AGFA -> Effects(grain = 0.26f, grainSize = 0.40f, halation = 0.18f, bloom = 0.10f)
         null -> Effects(grain = 0.16f, grainSize = 0.30f, halation = 0.12f, bloom = 0.08f)
     }
 
@@ -1255,6 +1282,235 @@ object Profiles {
             "Ultra-fast B&W. Bold, gritty grain for low light.",
             Look(mono = Mono(0.30f, 0.56f, 0.14f), curve = Curve(contrast = 1.10f, shadows = -0.02f, highlights = 0.10f), black = Rgb.gray(0.03f)),
             Effects(grain = 0.75f, grainSize = 0.75f),
+        ),
+        // ── More stocks
+        FilmProfile(
+            "fuji_mono", "Monochrome", "FMO", Category.FUJIFILM,
+            "Fujifilm's standard black & white. Neutral, faithful grey tones.",
+            Look(mono = Mono(0.30f, 0.59f, 0.11f), curve = Curve(contrast = 1.08f, shadows = -0.04f)),
+        ),
+        FilmProfile(
+            "proimage100", "Pro Image 100", "PI", Category.KODAK,
+            "Warm portrait stock made for hot climates. Gentle contrast, golden skin.",
+            Look(
+                density = 0.01f, scan = 1f,
+                temp = 0.07f,
+                curve = Curve(contrast = 0.96f, shadows = 0.04f, highlights = -0.10f, whites = -0.08f),
+                rgbCurveMix = 0.6f, saturation = 1.02f,
+                bands = listOf(
+                    Band(Hue.SKIN, 30f, shift = 3f, sat = 0.96f, light = 0.01f),
+                    Band(Hue.FOLIAGE, 40f, shift = -6f, sat = 0.92f),
+                    Band(Hue.SKY, 50f, shift = -4f, sat = 1.08f),
+                    Band(Hue.RED, 30f, shift = 3f, sat = 1.04f),
+                ),
+                highlightTone = Tone(72f, 0.02f),
+                black = Rgb.gray(0.012f),
+            ),
+            Effects(grain = 0.16f, grainSize = 0.3f, halation = 0.08f),
+        ),
+        FilmProfile(
+            "aerochrome", "Aerochrome", "AERO", Category.KODAK,
+            "Infrared false colour. Leaves turn crimson and pink, skies go deep blue.",
+            Look(
+                density = 0.02f,
+                curve = Curve(contrast = 1.15f, shadows = -0.10f),
+                saturation = 1.12f,
+                bands = listOf(
+                    // One broad band for all greens (overlapping bands would stack their shifts).
+                    Band(135f, 50f, shift = -125f, sat = 1.5f, light = 0.02f),
+                    Band(Hue.YELLOW, 18f, shift = -40f, sat = 1.05f),
+                    Band(Hue.RED, 25f, shift = 28f, sat = 1.05f),
+                    Band(Hue.SKY, 50f, shift = 8f, sat = 1.25f, light = -0.06f),
+                    Band(Hue.SKIN, 22f, shift = -6f, sat = 0.95f),
+                ),
+            ),
+            Effects(grain = 0.2f, grainSize = 0.35f, halation = 0.1f),
+        ),
+        FilmProfile(
+            "natura1600", "Natura 1600", "N16", Category.FUJI_STOCK,
+            "Low-light legend. Cool, clean shadows and natural skin under any light.",
+            Look(
+                density = 0.01f, scan = 1f,
+                temp = -0.03f,
+                curve = Curve(contrast = 1.02f, shadows = 0.02f, highlights = -0.08f, whites = -0.08f),
+                saturation = 0.98f,
+                bands = listOf(
+                    Band(Hue.SKIN, 28f, shift = -2f, sat = 0.98f),
+                    Band(Hue.FOLIAGE, 40f, shift = 6f, sat = 0.95f),
+                    Band(Hue.SKY, 50f, shift = -6f, sat = 1.02f),
+                ),
+                shadowTone = Tone(200f, 0.016f),
+                black = Rgb(0.01f, 0.018f, 0.022f),
+            ),
+            Effects(grain = 0.4f, grainSize = 0.5f, halation = 0.1f),
+        ),
+        FilmProfile(
+            "pro160ns", "Pro 160NS", "160", Category.FUJI_STOCK,
+            "Soft studio negative. Natural skin, gentle greens, airy highlights.",
+            Look(
+                density = 0.008f, scan = 1f,
+                curve = Curve(contrast = 0.90f, shadows = 0.06f, highlights = -0.10f, whites = -0.10f),
+                rgbCurveMix = 0.55f, saturation = 0.92f,
+                bands = listOf(
+                    Band(Hue.SKIN, 30f, sat = 0.95f, light = 0.015f),
+                    Band(Hue.FOLIAGE, 40f, shift = 10f, sat = 0.86f),
+                    Band(Hue.SKY, 50f, shift = -6f, sat = 0.92f),
+                ),
+                highlightTone = Tone(185f, 0.008f),
+                black = Rgb.gray(0.015f),
+            ),
+            Effects(grain = 0.14f, grainSize = 0.26f, halation = 0.06f),
+        ),
+        FilmProfile(
+            "vista200", "Vista 200", "AV2", Category.AGFA,
+            "Agfa's cheerful negative. Punchy reds, warm yellows, cyan-leaning skies.",
+            Look(
+                density = 0.015f, scan = 1f,
+                temp = 0.03f,
+                curve = Curve(contrast = 1.10f, shadows = -0.06f, highlights = -0.04f),
+                saturation = 1.12f,
+                bands = listOf(
+                    Band(Hue.RED, 30f, shift = -4f, sat = 1.18f),
+                    Band(Hue.SKIN, 22f, sat = 0.9f),
+                    Band(Hue.YELLOW, 30f, shift = -4f, sat = 1.08f),
+                    Band(Hue.SKY, 50f, shift = -10f, sat = 1.05f),
+                    Band(Hue.FOLIAGE, 40f, shift = 4f, sat = 1.04f),
+                ),
+                highlightTone = Tone(85f, 0.015f),
+            ),
+            Effects(grain = 0.3f, grainSize = 0.42f, halation = 0.1f),
+        ),
+        FilmProfile(
+            "precisa", "Precisa 100", "CT", Category.AGFA,
+            "Agfa slide film. Cool, crisp and saturated with bright blues.",
+            Look(
+                density = 0.04f,
+                temp = -0.03f,
+                curve = Curve(contrast = 1.24f, shadows = -0.20f, highlights = 0.04f, blacks = -0.1f),
+                saturation = 1.2f,
+                bands = listOf(
+                    Band(Hue.SKY, 50f, shift = 4f, sat = 1.18f, light = -0.04f),
+                    Band(Hue.FOLIAGE, 40f, shift = 6f, sat = 1.08f),
+                    Band(Hue.RED, 30f, sat = 1.06f),
+                    Band(Hue.SKIN, 25f, sat = 0.94f),
+                ),
+                shadowTone = Tone(250f, 0.012f),
+            ),
+            Effects(grain = 0.1f, grainSize = 0.2f),
+        ),
+        FilmProfile(
+            "print2383", "2383 Print", "2383", Category.CINEMA,
+            "Kodak print film. Rich blacks, teal shadows, warm skin: the classic cinema finish.",
+            Look(
+                density = 0.025f,
+                curve = Curve(contrast = 1.22f, shadows = -0.18f, highlights = -0.06f, whites = -0.12f),
+                rgbCurveMix = 0.85f, saturation = 1.02f,
+                bands = listOf(
+                    Band(Hue.SKIN, 28f, shift = 2f, sat = 0.94f),
+                    Band(Hue.SKY, 50f, shift = -8f, sat = 0.95f, light = -0.03f),
+                    Band(Hue.FOLIAGE, 40f, shift = 10f, sat = 0.85f),
+                    Band(Hue.RED, 30f, shift = -2f, sat = 1.05f),
+                ),
+                shadowTone = Tone(195f, 0.03f), highlightTone = Tone(70f, 0.018f),
+                white = Rgb(0.98f, 0.97f, 0.93f),
+            ),
+            Effects(grain = 0.16f, grainSize = 0.32f, halation = 0.18f),
+        ),
+        FilmProfile(
+            "vision50d", "Vision3 50D", "V50", Category.CINEMA,
+            "Kodak's finest daylight motion-picture stock. Clean, wide latitude, natural colour.",
+            Look(
+                density = 0.01f, scan = 1f,
+                curve = Curve(contrast = 0.92f, shadows = 0.06f, highlights = -0.12f, whites = -0.10f),
+                saturation = 0.94f,
+                bands = listOf(
+                    Band(Hue.FOLIAGE, 40f, shift = 4f, sat = 0.9f),
+                    Band(Hue.SKY, 50f, sat = 0.96f),
+                ),
+                shadowTone = Tone(200f, 0.008f),
+                black = Rgb.gray(0.02f),
+            ),
+            Effects(grain = 0.08f, grainSize = 0.2f, halation = 0.12f),
+        ),
+        FilmProfile(
+            "polaroid_expired", "Expired Polaroid", "EXP", Category.INSTANT,
+            "Out-of-date instant film. Faded magenta and teal shifts, creamy lifted blacks.",
+            Look(
+                temp = 0.04f, tint = 0.08f,
+                curve = Curve(contrast = 0.84f, shadows = 0.08f, highlights = -0.12f, whites = -0.16f),
+                rgbCurveMix = 0.4f, saturation = 0.8f,
+                bands = listOf(
+                    Band(Hue.SKY, 50f, shift = -25f, sat = 0.75f),
+                    Band(Hue.FOLIAGE, 40f, shift = 20f, sat = 0.75f),
+                    Band(Hue.SKIN, 28f, shift = 6f),
+                ),
+                shadowTone = Tone(190f, 0.03f), highlightTone = Tone(350f, 0.03f),
+                black = Rgb(0.12f, 0.10f, 0.12f), white = Rgb(0.95f, 0.90f, 0.88f),
+            ),
+            Effects(grain = 0.16f, bloom = 0.25f, vignette = 0.4f, frame = FrameStyle.INSTANT),
+        ),
+        FilmProfile(
+            "lomo_purple", "LomoChrome Purple", "LCP", Category.LOMOGRAPHY,
+            "Greens turn purple, blues turn teal, skin stays warm.",
+            Look(
+                density = 0.02f,
+                curve = Curve(contrast = 1.12f, shadows = -0.08f),
+                saturation = 1.08f,
+                bands = listOf(
+                    // Greens (incl. yellow-greens) -> violet; true yellows -> pink; blues -> teal.
+                    Band(130f, 50f, shift = 172f, sat = 1.2f, light = -0.03f),
+                    Band(Hue.SKY, 55f, shift = -85f, sat = 1.1f),
+                    Band(92f, 16f, shift = -80f, sat = 0.9f),
+                    Band(Hue.SKIN, 22f, sat = 0.98f),
+                ),
+            ),
+            Effects(grain = 0.3f, grainSize = 0.42f, halation = 0.12f),
+        ),
+        FilmProfile(
+            "lomo_metropolis", "Metropolis", "MET", Category.LOMOGRAPHY,
+            "Desaturated urban film. Muted colour, punchy contrast, greenish shadows.",
+            Look(
+                scan = 1f,
+                curve = Curve(contrast = 1.28f, shadows = -0.16f, highlights = 0.04f),
+                saturation = 0.55f,
+                bands = listOf(
+                    Band(Hue.RED, 30f, sat = 1.3f),
+                    Band(Hue.YELLOW, 30f, shift = -6f, sat = 0.8f),
+                ),
+                shadowTone = Tone(150f, 0.015f), highlightTone = Tone(80f, 0.012f),
+            ),
+            Effects(grain = 0.3f, grainSize = 0.4f, halation = 0.1f),
+        ),
+        FilmProfile(
+            "lomo800", "Color 800", "L800", Category.LOMOGRAPHY,
+            "Lomography's fast colour negative. Warm, punchy, saturated and grainy.",
+            Look(
+                density = 0.015f, scan = 1f,
+                temp = 0.06f,
+                curve = Curve(contrast = 1.12f, shadows = -0.06f, highlights = -0.04f),
+                saturation = 1.16f,
+                bands = listOf(
+                    Band(Hue.RED, 30f, sat = 1.1f),
+                    Band(Hue.SKIN, 28f, shift = 3f, sat = 0.95f),
+                    Band(Hue.FOLIAGE, 40f, shift = -4f, sat = 1.08f),
+                    Band(Hue.SKY, 50f, sat = 1.12f),
+                ),
+                highlightTone = Tone(75f, 0.02f),
+                black = Rgb(0.02f, 0.012f, 0.008f),
+            ),
+            Effects(grain = 0.42f, grainSize = 0.5f, halation = 0.14f),
+        ),
+        FilmProfile(
+            "xp2", "XP2 Super", "XP2", Category.ILFORD,
+            "Chromogenic B&W. Smooth tones, almost no grain, gentle contrast.",
+            Look(mono = Mono(0.29f, 0.60f, 0.11f), curve = Curve(contrast = 1.04f, shadows = 0.04f, highlights = -0.06f), black = Rgb.gray(0.02f)),
+            Effects(grain = 0.08f, grainSize = 0.2f),
+        ),
+        FilmProfile(
+            "sfx200", "SFX 200", "SFX", Category.ILFORD,
+            "Extended-red B&W. Dark skies, glowing foliage and skin, a near-infrared feel.",
+            Look(mono = Mono(0.62f, 0.36f, 0.02f), curve = Curve(contrast = 1.24f, shadows = -0.12f, highlights = 0.08f)),
+            Effects(grain = 0.26f, grainSize = 0.36f),
         ),
     )
 

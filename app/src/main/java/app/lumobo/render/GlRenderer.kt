@@ -400,7 +400,7 @@ class GlRenderer {
             blur(fxTex[0], fxFbo[1], 1f / fxW, 0f, sigma)
             blur(fxTex[1], fxFbo[0], 0f, 1f / fxH, sigma)
         }
-        if (fx.bloom > 0f) {
+        if (fx.bloom > 0f || fx.mist > 0f) {
             val sigma = 15f * scale
             prefilter(1, fxFbo[2])
             blur(fxTex[2], fxFbo[3], 1f / fxW, 0f, sigma)
@@ -449,7 +449,9 @@ class GlRenderer {
             }
             if (fx.streak > 0f) {
                 val k = fx.streak * 2.8f
-                arm(0.0, 1.7f * scale, 64, 0.045f, k * 0.35f, k * 0.6f, k)
+                // Cool anamorphic blue to warm amber; Rainbow splits it like a prism.
+                val w = fx.streakWarm.coerceIn(0f, 1f)
+                arm(0.0, 1.7f * scale, 64, 0.045f, k * (0.35f + 0.65f * w), k * (0.6f + 0.02f * w), k * (1f - 0.7f * w), fx.starSpectral)
             }
             GLES30.glDisable(GLES30.GL_BLEND)
         }
@@ -522,6 +524,7 @@ class GlRenderer {
         if (mono) GLES30.glUniform3f(uniform(p, "uHalColor"), 0.55f, 0.55f, 0.55f)
         else GLES30.glUniform3f(uniform(p, "uHalColor"), 1.0f, 0.30f, 0.10f)
         GLES30.glUniform1f(uniform(p, "uBloomAmt"), fx.bloom)
+        GLES30.glUniform1f(uniform(p, "uMist"), fx.mist)
         GLES30.glUniform1f(uniform(p, "uVignette"), fx.vignette)
         GLES30.glUniform1f(uniform(p, "uAberration"), fx.aberration)
         GLES30.glUniform1f(uniform(p, "uLeak"), fx.leak)

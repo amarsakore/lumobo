@@ -53,6 +53,7 @@ data class Recipe(
             put("sk", fx.streak.toDouble()); put("ts", fx.tiltShift.toDouble()); put("fy", fx.focusY.toDouble()); put("fs", fx.focusSize.toDouble())
             put("sf", fx.softFocus.toDouble()); put("sw", fx.swirl.toDouble())
             put("sth", fx.starThreshold.toDouble()); put("ssp", fx.starSpectral.toDouble())
+            put("mi", fx.mist.toDouble()); put("sww", fx.streakWarm.toDouble())
             if (fx.starMask.isNotEmpty()) put("sm", org.json.JSONArray().apply { fx.starMask.forEach { put((it * 10000).roundToInt() / 10000.0) } })
         })
         put("geo", JSONObject().apply {
@@ -114,6 +115,7 @@ data class Recipe(
                         streak = x.f("sk", 0f), tiltShift = x.f("ts", 0f), focusY = x.f("fy", 0.55f), focusSize = x.f("fs", 0.25f),
                         softFocus = x.f("sf", 0f), swirl = x.f("sw", 0f),
                         starThreshold = x.f("sth", 0.6f), starSpectral = x.f("ssp", 0f),
+                        mist = x.f("mi", 0f), streakWarm = x.f("sww", 0f),
                         starMask = x.optJSONArray("sm")?.let { a -> List(a.length()) { a.getDouble(it).toFloat() } } ?: emptyList(),
                     ),
                     geo = Geometry(
