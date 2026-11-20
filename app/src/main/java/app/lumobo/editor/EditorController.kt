@@ -121,13 +121,13 @@ class EditorController(
     private var bufIdx = 0
     private val dirty = Channel<Unit>(Channel.CONFLATED)
 
-    private val drafts = app.lumobo.data.Drafts.get(context)
-    private val draftKey = (target ?: uri).toString()
+    /** Where the next save goes: the developed photo being re-edited, or the one this session made. */
+    private var saveTarget: Uri? = target
+    private var savedSnap: Snapshot? = null
 
     init {
-        // A library photo always opens fresh, as shot. Re-editing a developed photo (Edit Again)
-        // picks up its auto-saved draft if there is one, else the recipe stored in the photo.
-        val start = if (target != null) drafts.load(draftKey) ?: initial else initial
+        // A library photo opens as shot; a developed photo (Edit Again) opens with its recipe.
+        val start = initial
         if (start != null) {
             profile = Profiles.byId(start.filmId)
             adj = start.adj
@@ -138,16 +138,11 @@ class EditorController(
             fx = settings.effectsFor(Profiles.ORIGINAL)
         }
         commit()
+        savedSnap = snapshot()
     }
 
-    /** Auto-save: keep the current edit as this photo's draft (cleared when back to untouched). */
-    private fun saveDraft() {
-        if (target == null) return  // only developed photos keep drafts
-        val untouched = profile.isIdentity && adj == Adjustments() && geo == Geometry() &&
-            fx == settings.effectsFor(Profiles.ORIGINAL) && initial == null
-        if (untouched) drafts.clear(draftKey)
-        else drafts.save(draftKey, Recipe(uri, profile.id, adj, fx, geo))
-    }
+    /** Edited since opening or since the last save, so leaving should develop it. */
+    val isDirty get() = status == EditorStatus.Ready && snapshot() != savedSnap
 
     private fun snapshot() = Snapshot(profile, adj, fx, geo)
 
@@ -177,8 +172,6 @@ class EditorController(
     private fun refreshHistory() {
         canUndo = historyIndex > 0
         canRedo = historyIndex < history.lastIndex
-        // Every committed change (and undo / redo) is auto-saved.
-        if (status == EditorStatus.Ready || historyIndex > 0) saveDraft()
     }
 
     private fun restore(s: Snapshot) {
@@ -261,7 +254,7 @@ class EditorController(
                 val (sw, sh) = sourceSize
                 val (w, h) = GlRenderer.outputSize(sw, sh, g)
                 val target = buffer(idx, w, h)
-                Engine.renderer.onGl { renderPreview(lut, a, f, p.isMono, g, target) }
+                Engine.renderer.onGl { scan = p.look.scan; renderPreview(lut, a, f, p.isMono, g, target) }
                 val hist = if (wantHistogram) withContext(Dispatchers.Default) { histogramOf(target) } else null
                 val shown = if (crop) target else withContext(Dispatchers.Default) {
                     if (f.dateStamp) Overlays.drawDateStamp(target, captureDate, settings.dateColor, settings.dateFormat)
@@ -523,7 +516,7 @@ class EditorController(
             for (b in longArrayOf(budget, minOf(budget, 24_000_000L), 12_000_000L)) {
                 try {
                     val full = withContext(Dispatchers.IO) { Images.decode(context, uri, maxEdge, b) }
-                    out = Engine.renderer.onGl { renderFull(full, lut, a, f, p.isMono, g) }
+                    out = Engine.renderer.onGl { scan = p.look.scan; renderFull(full, lut, a, f, p.isMono, g) }
                     break
                 } catch (oom: OutOfMemoryError) {
                     Log.w(TAG, "OOM at $b px, retrying smaller")
@@ -541,8 +534,11 @@ class EditorController(
             val recipe = Recipe(uri, p.id, a, f, g)
             val options = Images.SaveOptions(settings.jpegQuality, settings.keepCameraInfo, settings.keepLocation)
             val name = if (p.isIdentity) "Original" else p.name
-            val saved = withContext(Dispatchers.IO) { Images.saveJpeg(context, result, uri, name, recipe, options, target) }
+            val saved = withContext(Dispatchers.IO) { Images.saveJpeg(context, result, uri, name, recipe, options, saveTarget) }
             result.recycle()
+            // Later saves in this session update the same developed photo instead of adding copies.
+            saveTarget = saved
+            savedSnap = Snapshot(p, a, f, g)
             Result.success(saved)
         } catch (c: CancellationException) {
             throw c

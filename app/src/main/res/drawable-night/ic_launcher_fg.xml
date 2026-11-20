@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Lumobo: a lens made of rainbow rings. -->
+<!-- Lumobo: a lens made of rainbow rings, inside the adaptive-icon safe zone (r < 33). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#F2EBDD" android:pathData="M16.4,54a37.6,37.6 0 1,0 75.2,0a37.6,37.6 0 1,0 -75.2,0" />
-    <path android:fillColor="#E8463A" android:pathData="M18,54a36,36 0 1,0 72,0a36,36 0 1,0 -72,0" />
-    <path android:fillColor="#F28C28" android:pathData="M23,54a31,31 0 1,0 62,0a31,31 0 1,0 -62,0" />
-    <path android:fillColor="#F5C443" android:pathData="M28,54a26,26 0 1,0 52,0a26,26 0 1,0 -52,0" />
-    <path android:fillColor="#4FA35B" android:pathData="M33,54a21,21 0 1,0 42,0a21,21 0 1,0 -42,0" />
-    <path android:fillColor="#3C7BC0" android:pathData="M38,54a16,16 0 1,0 32,0a16,16 0 1,0 -32,0" />
-    <path android:fillColor="#0E0C0A" android:pathData="M43,54a11,11 0 1,0 22,0a11,11 0 1,0 -22,0" />
-    <path android:fillColor="#F2EBDD" android:pathData="M47.4,50.4a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#F2EBDD" android:pathData="M22.40,54a31.60,31.60 0 1,0 63.20,0a31.60,31.60 0 1,0 -63.20,0" />
+    <path android:fillColor="#E8463A" android:pathData="M24.00,54a30.00,30.00 0 1,0 60.00,0a30.00,30.00 0 1,0 -60.00,0" />
+    <path android:fillColor="#F28C28" android:pathData="M28.17,54a25.83,25.83 0 1,0 51.67,0a25.83,25.83 0 1,0 -51.67,0" />
+    <path android:fillColor="#F5C443" android:pathData="M32.33,54a21.67,21.67 0 1,0 43.33,0a21.67,21.67 0 1,0 -43.33,0" />
+    <path android:fillColor="#4FA35B" android:pathData="M36.50,54a17.50,17.50 0 1,0 35.00,0a17.50,17.50 0 1,0 -35.00,0" />
+    <path android:fillColor="#3C7BC0" android:pathData="M40.67,54a13.33,13.33 0 1,0 26.67,0a13.33,13.33 0 1,0 -26.67,0" />
+    <path android:fillColor="#0E0C0A" android:pathData="M44.83,54a9.17,9.17 0 1,0 18.33,0a9.17,9.17 0 1,0 -18.33,0" />
+    <path android:fillColor="#F2EBDD" android:pathData="M45.93,50.40a2.67,2.67 0 1,0 5.33,0a2.67,2.67 0 1,0 -5.33,0" />
 </vector>

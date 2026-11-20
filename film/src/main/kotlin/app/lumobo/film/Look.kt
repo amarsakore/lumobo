@@ -133,6 +133,18 @@ data class Look(
     val highlightTone: Tone? = null,
     val black: Rgb = Rgb.BLACK,
     val white: Rgb = Rgb.WHITE,
+    /**
+     * Dye density (subtractive colour): saturated colours get darker and richer, as more dye
+     * builds up, instead of brighter as with digital saturation. In OKLab L units at full
+     * colour (slide films ~0.03-0.07, negatives ~0.01).
+     */
+    val density: Float = 0f,
+    /**
+     * Lab-scan strength (0..1) for negative stocks: like a minilab scanner, each photo's
+     * exposure and colour balance are partly normalised before the film's response.
+     * Slide and instant films are what you exposed, so they keep 0.
+     */
+    val scan: Float = 0f,
 )
 
 /** White-balance channel gains shared by CPU and GPU paths. Luminance normalised. */
@@ -245,7 +257,34 @@ class CompiledLook(val look: Look) {
         c *= sat
         var a = ColorMath.polarA(c, h)
         var bb = ColorMath.polarB(c, h)
+        if (look.density != 0f) {
+            // More dye where colour is stronger; spare the deepest shadows (already dense).
+            val d = look.density * smoothstep(0.03f, 0.2f, c) * smoothstep(0.05f, 0.4f, L)
+            if (d > 0f) {
+                // Only as dense as the colour can stay this vivid on screen: a dark red can't
+                // be as saturated as a mid red, so stop at the gamut edge instead of dulling it.
+                if (!inGamut(L, a, bb, tmp)) {
+                    // Already at the screen's limit: keep it vivid, add no density.
+                } else if (inGamut(L - d, a, bb, tmp)) {
+                    L -= d
+                } else {
+                    var lo = 0f
+                    var hi = 1f
+                    repeat(7) {
+                        val mid = (lo + hi) * 0.5f
+                        if (inGamut(L - d * mid, a, bb, tmp)) lo = mid else hi = mid
+                    }
+                    L -= d * lo
+                }
+            }
+        }
         finishLab(L, a, bb, out, tmp)
+    }
+
+    private fun inGamut(L: Float, a: Float, b: Float, tmp: FloatArray): Boolean {
+        ColorMath.oklabToLinear(L, a, b, tmp)
+        val e = 1e-4f
+        return tmp[0] >= -e && tmp[1] >= -e && tmp[2] >= -e && tmp[0] <= 1f + e && tmp[1] <= 1f + e && tmp[2] <= 1f + e
     }
 
     private fun finishLab(L0: Float, a0: Float, b0: Float, out: FloatArray, tmp: FloatArray) {

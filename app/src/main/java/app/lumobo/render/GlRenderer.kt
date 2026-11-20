@@ -201,6 +201,7 @@ class GlRenderer {
         previewTex = uploadBitmap(bitmap, mipmaps = true)
         previewW = bitmap.width
         previewH = bitmap.height
+        analyseScene(bitmap)
         val s = FX_LONG_EDGE.toFloat() / max(previewW, previewH)
         val w = max(16, (previewW * s).roundToInt())
         val h = max(16, (previewH * s).roundToInt())
@@ -291,7 +292,66 @@ class GlRenderer {
     private fun gains(adj: Adjustments): FloatArray {
         val wb = whiteBalanceGains(adj.temp, adj.tint)
         val ev = 2.0.pow(adj.exposure.toDouble() * 2.0).toFloat()  // slider ±1 == ±2 stops
-        return floatArrayOf(wb[0] * ev, wb[1] * ev, wb[2] * ev)
+        // Lab scan (negative films): the photo's own exposure / colour correction, in part.
+        val s = scan.coerceIn(0f, 1f)
+        val sc = if (s > 0f) FloatArray(3) { sceneGain[it].toDouble().pow(s.toDouble()).toFloat() } else floatArrayOf(1f, 1f, 1f)
+        return floatArrayOf(wb[0] * ev * sc[0], wb[1] * ev * sc[1], wb[2] * ev * sc[2])
+    }
+
+    /** How much of the lab-scan correction the current film applies (its Look.scan). */
+    var scan = 0f
+
+    /**
+     * Correction a minilab scanner would make for this photo: exposure toward a mid-grey key
+     * and a gentle grey balance. Measured once per photo; mild and partial on purpose, so a
+     * night shot stays a night shot and a sunset stays warm.
+     */
+    private var sceneGain = floatArrayOf(1f, 1f, 1f)
+
+    private fun analyseScene(bmp: Bitmap) {
+        val step = max(1, kotlin.math.sqrt(bmp.width.toDouble() * bmp.height / 40000.0).toInt())
+        val row = IntArray(bmp.width)
+        var logSum = 0.0; var wSum = 0.0
+        var rs = 0.0; var gs = 0.0; var bs = 0.0; var n = 0
+        var y = 0
+        while (y < bmp.height) {
+            bmp.getPixels(row, 0, bmp.width, 0, y, bmp.width, 1)
+            val dy = y / (bmp.height - 1f) - 0.5f
+            var x = 0
+            while (x < bmp.width) {
+                val c = row[x]
+                val r = ColorMath.decode(((c shr 16) and 255) / 255f)
+                val g = ColorMath.decode(((c shr 8) and 255) / 255f)
+                val b = ColorMath.decode((c and 255) / 255f)
+                val lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
+                val dx = x / (bmp.width - 1f) - 0.5f
+                val w = 1.0 + (1f - (dx * dx + dy * dy) * 4f).coerceIn(0f, 1f)  // centre-weighted, like a scanner
+                logSum += w * kotlin.math.ln(1e-4 + lum)
+                wSum += w
+                if (lum in 0.03f..0.6f) { rs += r; gs += g; bs += b; n++ }
+                x += step
+            }
+            y += step
+        }
+        val key = kotlin.math.exp(logSum / wSum)
+        // Exposure: ignore small deviations, correct half of the rest, within limits.
+        var ev = kotlin.math.ln(0.18 / key) / kotlin.math.ln(2.0)
+        ev = when {
+            ev > 0.35 -> (ev - 0.35) * 0.5
+            ev < -0.35 -> (ev + 0.35) * 0.5
+            else -> 0.0
+        }.coerceIn(-0.6, 0.5)
+        val e = 2.0.pow(ev).toFloat()
+        // Colour: a third of a grey-world balance on the mid-tones, at most ±8 % per channel.
+        var cr = 1f; var cg = 1f; var cb = 1f
+        if (n > 200) {
+            val avg = (rs + gs + bs) / 3.0
+            fun part(v: Double) = (1.0 + ((avg / v.coerceAtLeast(1e-6)) - 1.0) * 0.33).toFloat().coerceIn(0.92f, 1.08f)
+            cr = part(rs); cg = part(gs); cb = part(bs)
+            val l = 0.2126f * cr + 0.7152f * cg + 0.0722f * cb
+            cr /= l; cg /= l; cb /= l
+        }
+        sceneGain = floatArrayOf(cr * e, cg * e, cb * e)
     }
 
     private fun glowPasses(adj: Adjustments, fx: Effects, geo: Geometry) {
@@ -313,6 +373,7 @@ class GlRenderer {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (maskId != 0) maskId else grainTex)
             GLES30.glUniform1i(uniform(progPrefilter, "uStarMask"), 1)
             GLES30.glUniform1f(uniform(progPrefilter, "uMaskOn"), if (maskId != 0) 1f else 0f)
+            GLES30.glUniform1f(uniform(progPrefilter, "uThresh"), fx.starThreshold.coerceIn(0.2f, 0.98f))
             drawQuad()
         }
         fun blur(srcTex: Int, dstFbo: Int, dx: Float, dy: Float, sigma: Float) {
@@ -368,7 +429,8 @@ class GlRenderer {
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
             GLES30.glUniform1i(uniform(progStreak, "uTex"), 0)
-            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float) {
+            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f) {
+                GLES30.glUniform1f(uniform(progStreak, "uSpectral"), spectral)
                 val (dx, dy) = displayToSource(displayDeg, geo)
                 GLES30.glUniform2f(uniform(progStreak, "uDir"), dx * stepTexels / fxW, dy * stepTexels / fxH)
                 GLES30.glUniform1i(uniform(progStreak, "uTaps"), taps)
@@ -382,7 +444,7 @@ class GlRenderer {
                 val k = fx.star * 2.4f
                 for (i in 0 until arms) {
                     val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
-                    arm(deg, step, 48, 0.065f, k, k * 0.97f, k * 0.92f)
+                    arm(deg, step, 48, 0.065f, k, k * 0.97f, k * 0.92f, fx.starSpectral)
                 }
             }
             if (fx.streak > 0f) {

@@ -42,6 +42,10 @@ data class Effects(
     val focusSize: Float = 0.25f,
     val softFocus: Float = 0f,
     val swirl: Float = 0f,
+    /** How bright a point must be to make a star or streak (0.6 = the classic 1.1 look). */
+    val starThreshold: Float = 0.6f,
+    /** Diffraction colour along the rays (0 = white, 1 = full rainbow). */
+    val starSpectral: Float = 0f,
     /** Areas where stars / streaks are erased: (x, y, radius) triples in source uv. */
     val starMask: List<Float> = emptyList(),
 ) {
@@ -50,7 +54,7 @@ data class Effects(
         lens = o.lens, distortion = o.distortion, fisheyeCircle = o.fisheyeCircle, star = o.star,
         starPoints = o.starPoints, starLength = o.starLength, starAngle = o.starAngle, streak = o.streak,
         tiltShift = o.tiltShift, focusY = o.focusY, focusSize = o.focusSize, softFocus = o.softFocus, swirl = o.swirl,
-        starMask = o.starMask,
+        starMask = o.starMask, starThreshold = o.starThreshold, starSpectral = o.starSpectral,
     )
 }
 
@@ -470,6 +474,7 @@ object Profiles {
             "provia", "Provia", "STD", Category.FUJIFILM,
             "Standard. Faithful colour with a gentle slide-film punch.",
             Look(
+                density = 0.025f,
                 curve = Curve(contrast = 1.10f, shadows = -0.10f),
                 saturation = 1.06f,
                 bands = listOf(
@@ -483,6 +488,7 @@ object Profiles {
             "velvia", "Velvia", "V", Category.FUJIFILM,
             "Vivid. Saturated landscape slide film with deep blacks and rich skies.",
             Look(
+                density = 0.07f,
                 curve = Curve(contrast = 1.30f, shadows = -0.30f, highlights = 0.05f, blacks = -0.2f),
                 saturation = 1.26f, vibrance = 0.1f, shadowSat = 1.08f,
                 bands = listOf(
@@ -498,6 +504,7 @@ object Profiles {
             "astia", "Astia", "S", Category.FUJIFILM,
             "Soft. Gentle tonality for skin, while keeping skies vivid.",
             Look(
+                density = 0.015f,
                 curve = Curve(contrast = 1.02f, shadows = 0.08f, highlights = -0.10f),
                 saturation = 1.07f,
                 bands = listOf(
@@ -512,6 +519,7 @@ object Profiles {
             "classic_chrome", "Classic Chrome", "CC", Category.FUJIFILM,
             "Documentary slide look. Muted colour, hard shadows, deep teal skies.",
             Look(
+                density = 0.05f,
                 curve = Curve(contrast = 1.12f, shadows = -0.28f, highlights = -0.06f, blacks = -0.1f),
                 rgbCurveMix = 0.5f, saturation = 0.80f, highlightSat = 0.85f,
                 bands = listOf(
@@ -528,6 +536,7 @@ object Profiles {
             "classic_neg", "Classic Neg", "NC", Category.FUJIFILM,
             "Superia-inspired. Hard contrast, teal shadows, warm highlights, magenta reds.",
             Look(
+                density = 0.02f, scan = 1f,
                 curve = Curve(contrast = 1.20f, shadows = -0.32f, highlights = -0.04f, whites = -0.15f),
                 rgbCurveMix = 0.85f, saturation = 0.98f, highlightSat = 0.9f,
                 bands = listOf(
@@ -545,23 +554,25 @@ object Profiles {
             "nostalgic_neg", "Nostalgic Neg", "NN", Category.FUJIFILM,
             "70s American colour. Amber highlights, soft roll-off, rich shadows.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = 0.06f,
                 curve = Curve(contrast = 1.06f, shadows = -0.08f, highlights = -0.18f, whites = -0.2f),
                 saturation = 1.04f,
                 bands = listOf(
                     Band(Hue.RED, 30f, sat = 1.08f),
-                    Band(Hue.SKIN, 30f, shift = 3f, sat = 1.04f),
+                    Band(Hue.SKIN, 30f, shift = 3f, sat = 0.90f),
                     Band(Hue.YELLOW, 30f, shift = -5f, sat = 1.05f),
                     Band(Hue.FOLIAGE, 40f, shift = -6f, sat = 0.90f),
                     Band(Hue.SKY, 45f, shift = -4f, sat = 0.92f),
                 ),
-                highlightTone = Tone(72f, 0.040f), midTone = Tone(60f, 0.010f),
+                highlightTone = Tone(72f, 0.040f), midTone = Tone(60f, 0.006f),
             ),
         ),
         FilmProfile(
             "reala_ace", "Reala Ace", "RA", Category.FUJIFILM,
             "Faithful colour with a crisp, hard tonality.",
             Look(
+                density = 0.02f, scan = 1f,
                 curve = Curve(contrast = 1.16f, shadows = -0.16f, highlights = 0.02f),
                 saturation = 1.04f,
                 bands = listOf(
@@ -575,6 +586,7 @@ object Profiles {
             "pro_neg_hi", "Pro Neg Hi", "NH", Category.FUJIFILM,
             "Portrait negative with a little extra contrast.",
             Look(
+                density = 0.015f, scan = 1f,
                 curve = Curve(contrast = 1.12f, shadows = -0.12f, highlights = -0.04f),
                 saturation = 0.94f,
                 bands = listOf(Band(Hue.SKIN, 30f, sat = 0.95f, light = 0.01f)),
@@ -584,6 +596,7 @@ object Profiles {
             "pro_neg_std", "Pro Neg Std", "NS", Category.FUJIFILM,
             "Soft studio negative. Low contrast, natural, flattering skin.",
             Look(
+                density = 0.01f, scan = 1f,
                 curve = Curve(contrast = 0.94f, shadows = 0.06f, highlights = -0.08f),
                 saturation = 0.86f,
                 bands = listOf(
@@ -596,6 +609,7 @@ object Profiles {
             "eterna", "Eterna", "ET", Category.FUJIFILM,
             "Motion-picture stock. Flat, low saturation, teal shadows.",
             Look(
+                density = 0.01f, scan = 1f,
                 curve = Curve(contrast = 0.86f, shadows = 0.14f, highlights = -0.16f, whites = -0.15f),
                 rgbCurveMix = 0.4f, saturation = 0.70f,
                 bands = listOf(
@@ -621,7 +635,7 @@ object Profiles {
             "acros", "Acros", "A", Category.FUJIFILM,
             "Fine-grain black & white with rich, deep tonality.",
             Look(mono = Mono(0.30f, 0.58f, 0.12f), curve = Curve(contrast = 1.22f, shadows = -0.18f, highlights = 0.06f, blacks = -0.1f)),
-            Effects(grain = 0.22f, grainSize = 0.2f),
+            Effects(grain = 0.12f, grainSize = 0.18f),
         ),
         FilmProfile(
             "acros_r", "Acros + R", "A+R", Category.FUJIFILM,
@@ -661,6 +675,7 @@ object Profiles {
             "gr_positive", "Positive Film", "PF", Category.RICOH,
             "Slide film punch. Warm, saturated, contrasty with yellow-tinted highlights.",
             Look(
+                density = 0.04f,
                 temp = 0.04f,
                 curve = Curve(contrast = 1.24f, shadows = -0.24f, highlights = 0.06f),
                 saturation = 1.18f,
@@ -741,15 +756,16 @@ object Profiles {
             "portra400", "Portra 400", "P400", Category.KODAK,
             "The portrait standard. Warm skin, soft contrast, pastel greens.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = 0.06f,
                 curve = Curve(contrast = 0.92f, shadows = 0.06f, highlights = -0.14f, whites = -0.12f),
-                rgbCurveMix = 0.55f, saturation = 0.94f,
+                rgbCurveMix = 0.55f, saturation = 1.0f,
                 bands = listOf(
-                    Band(Hue.RED, 30f, shift = 4f, sat = 0.96f),
-                    Band(Hue.SKIN, 30f, shift = 2f, sat = 1.03f, light = 0.015f),
-                    Band(Hue.YELLOW, 30f, shift = -4f, sat = 0.95f),
-                    Band(Hue.FOLIAGE, 40f, shift = -6f, sat = 0.84f),
-                    Band(Hue.SKY, 50f, shift = -3f, sat = 0.90f),
+                    Band(Hue.RED, 30f, shift = 4f, sat = 0.98f),
+                    Band(Hue.SKIN, 30f, shift = 2f, sat = 0.98f, light = 0.015f),
+                    Band(Hue.YELLOW, 30f, shift = -4f, sat = 0.97f),
+                    Band(Hue.FOLIAGE, 40f, shift = -6f, sat = 0.90f),
+                    Band(Hue.SKY, 50f, shift = -3f, sat = 0.98f),
                 ),
                 shadowTone = Tone(205f, 0.012f), highlightTone = Tone(70f, 0.018f),
                 black = Rgb.gray(0.015f),
@@ -760,6 +776,7 @@ object Profiles {
             "portra160", "Portra 160", "P160", Category.KODAK,
             "Finer and cooler than 400. Clean pastel daylight.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = 0.02f,
                 curve = Curve(contrast = 0.90f, shadows = 0.06f, highlights = -0.12f, whites = -0.1f),
                 rgbCurveMix = 0.55f, saturation = 0.88f,
@@ -777,6 +794,7 @@ object Profiles {
             "portra800", "Portra 800", "P800", Category.KODAK,
             "Pushed portrait stock. Warmer, richer and grainier.",
             Look(
+                density = 0.012f, scan = 1f,
                 temp = 0.08f,
                 curve = Curve(contrast = 1.0f, shadows = -0.04f, highlights = -0.10f, whites = -0.1f),
                 rgbCurveMix = 0.6f, saturation = 1.02f,
@@ -795,6 +813,7 @@ object Profiles {
             "ektar100", "Ektar 100", "E100", Category.KODAK,
             "The world's finest-grain colour negative. Ultra-saturated and punchy.",
             Look(
+                density = 0.035f, scan = 1f,
                 curve = Curve(contrast = 1.16f, shadows = -0.14f, highlights = 0.04f),
                 saturation = 1.26f,
                 bands = listOf(
@@ -812,14 +831,15 @@ object Profiles {
             "gold200", "Gold 200", "G200", Category.KODAK,
             "Golden-hour in a box. Warm yellows and nostalgic sunshine.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = 0.12f,
                 curve = Curve(contrast = 1.06f, shadows = -0.04f, highlights = -0.06f),
                 saturation = 1.08f,
                 bands = listOf(
                     Band(Hue.YELLOW, 35f, shift = -6f, sat = 1.15f),
-                    Band(Hue.SKIN, 30f, shift = 3f, sat = 1.04f),
+                    Band(Hue.SKIN, 30f, shift = 3f, sat = 0.90f),
                     Band(Hue.FOLIAGE, 40f, shift = -10f, sat = 0.92f),
-                    Band(Hue.SKY, 50f, shift = -4f, sat = 0.90f),
+                    Band(Hue.SKY, 50f, shift = -4f, sat = 1.22f),
                     Band(Hue.RED, 30f, shift = 4f, sat = 1.04f),
                 ),
                 highlightTone = Tone(85f, 0.03f), midTone = Tone(70f, 0.012f),
@@ -831,6 +851,7 @@ object Profiles {
             "colorplus200", "ColorPlus 200", "CP", Category.KODAK,
             "Budget everyday film. Warm, slightly soft, honest.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = 0.10f,
                 curve = Curve(contrast = 1.0f, shadows = 0.02f, highlights = -0.08f),
                 saturation = 1.0f,
@@ -846,6 +867,7 @@ object Profiles {
             "ultramax400", "UltraMax 400", "UM", Category.KODAK,
             "Consumer all-rounder. Saturated reds and warm daylight.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = 0.07f,
                 curve = Curve(contrast = 1.10f, shadows = -0.08f, highlights = -0.04f),
                 saturation = 1.14f,
@@ -862,6 +884,7 @@ object Profiles {
             "kodachrome64", "Kodachrome 64", "KR", Category.KODAK,
             "The legendary slide film. Deep reds, dense blacks, timeless warmth.",
             Look(
+                density = 0.06f,
                 temp = 0.05f,
                 curve = Curve(contrast = 1.28f, shadows = -0.30f, blacks = -0.25f),
                 rgbCurveMix = 0.85f, saturation = 1.12f, highlightSat = 0.88f,
@@ -874,12 +897,13 @@ object Profiles {
                 ),
                 highlightTone = Tone(80f, 0.012f), shadowTone = Tone(30f, 0.008f),
             ),
-            Effects(grain = 0.14f, grainSize = 0.25f),
+            Effects(grain = 0.10f, grainSize = 0.2f),
         ),
         FilmProfile(
             "ektachrome", "Ektachrome E100", "E6", Category.KODAK,
             "Modern slide film. Clean, cool and vivid blues.",
             Look(
+                density = 0.04f,
                 temp = -0.05f,
                 curve = Curve(contrast = 1.20f, shadows = -0.18f, highlights = 0.04f),
                 saturation = 1.14f,
@@ -910,6 +934,7 @@ object Profiles {
             "superia400", "Superia 400", "S400", Category.FUJI_STOCK,
             "Fuji's consumer classic. Cool greens and that tell-tale cyan shadow.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = -0.03f, tint = -0.03f,
                 curve = Curve(contrast = 1.10f, shadows = -0.10f, highlights = -0.04f),
                 saturation = 1.08f,
@@ -927,6 +952,7 @@ object Profiles {
             "pro400h", "Pro 400H", "400H", Category.FUJI_STOCK,
             "Wedding-photographer favourite. Airy, minty greens, soft pastel skin.",
             Look(
+                density = 0.005f, scan = 1f,
                 exposure = 0.25f,
                 curve = Curve(contrast = 0.88f, shadows = 0.10f, highlights = -0.06f, whites = -0.1f),
                 rgbCurveMix = 0.5f, saturation = 0.86f,
@@ -945,6 +971,7 @@ object Profiles {
             "c200", "Fujicolor C200", "C200", Category.FUJI_STOCK,
             "Cheap and cheerful. Slightly green, a little grainy, very lovable.",
             Look(
+                density = 0.01f, scan = 1f,
                 tint = -0.04f,
                 curve = Curve(contrast = 1.05f, shadows = -0.06f, highlights = -0.04f),
                 bands = listOf(
@@ -962,6 +989,7 @@ object Profiles {
             "cinestill800t", "CineStill 800T", "800T", Category.CINEMA,
             "Tungsten cine film without remjet. Cool cast and glowing red halation.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = -0.36f, tint = 0.05f,
                 curve = Curve(contrast = 1.05f, shadows = -0.04f, highlights = -0.08f),
                 saturation = 1.04f,
@@ -979,6 +1007,7 @@ object Profiles {
             "cinestill50d", "CineStill 50D", "50D", Category.CINEMA,
             "Daylight cine stock. Clean, crisp and saturated with a soft glow.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = -0.03f,
                 curve = Curve(contrast = 1.08f, shadows = -0.06f, highlights = -0.04f),
                 saturation = 1.08f,
@@ -991,6 +1020,7 @@ object Profiles {
             "vision250d", "Vision3 250D", "250D", Category.CINEMA,
             "Hollywood daylight negative. Wide latitude, natural skin, gentle teal.",
             Look(
+                density = 0.01f, scan = 1f,
                 curve = Curve(contrast = 0.90f, shadows = 0.08f, highlights = -0.12f, whites = -0.1f),
                 rgbCurveMix = 0.5f, saturation = 0.90f,
                 bands = listOf(
@@ -1006,6 +1036,7 @@ object Profiles {
             "vision500t", "Vision3 500T", "500T", Category.CINEMA,
             "Night-time cine negative. Cool shadows, warm practical lights.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = -0.20f,
                 curve = Curve(contrast = 0.94f, shadows = 0.04f, highlights = -0.10f),
                 saturation = 0.92f,
@@ -1021,6 +1052,7 @@ object Profiles {
             "blockbuster", "Blockbuster", "T&O", Category.CINEMA,
             "Teal and orange colour grade. Big, warm skin against cool shadows.",
             Look(
+                density = 0.02f,
                 curve = Curve(contrast = 1.12f, shadows = -0.10f, highlights = -0.04f),
                 saturation = 1.0f,
                 bands = listOf(
@@ -1060,7 +1092,7 @@ object Profiles {
                 rgbCurveMix = 0.4f, saturation = 0.66f,
                 bands = listOf(
                     Band(Hue.FOLIAGE, 40f, shift = -10f, sat = 0.80f),
-                    Band(Hue.SKY, 50f, sat = 0.75f),
+                    Band(Hue.SKY, 50f, shift = -12f, sat = 1.9f),
                 ),
                 highlightTone = Tone(75f, 0.03f), shadowTone = Tone(40f, 0.02f),
                 black = Rgb(0.10f, 0.08f, 0.07f), white = Rgb(0.96f, 0.92f, 0.82f),
@@ -1090,6 +1122,7 @@ object Profiles {
             "disposable", "Disposable", "QS", Category.CAMERAS,
             "Single-use flash camera. Warm, grainy, vignetted, date-stamped.",
             Look(
+                density = 0.01f, scan = 1f,
                 temp = 0.08f,
                 curve = Curve(contrast = 1.14f, shadows = -0.08f, highlights = 0.08f),
                 saturation = 1.12f,
@@ -1124,6 +1157,7 @@ object Profiles {
             "leica", "Leica M", "M", Category.CAMERAS,
             "Rangefinder rendering. Dense blacks, warm mids, restrained greens.",
             Look(
+                density = 0.02f,
                 temp = 0.03f,
                 curve = Curve(contrast = 1.18f, shadows = -0.22f, highlights = -0.02f, blacks = -0.15f),
                 saturation = 0.98f,
@@ -1141,6 +1175,7 @@ object Profiles {
             "hasselblad", "Hasselblad", "HNCS", Category.CAMERAS,
             "Natural colour solution. Smooth gradation and true-to-life skin.",
             Look(
+                density = 0.01f,
                 curve = Curve(contrast = 1.05f, shadows = -0.04f, highlights = -0.06f),
                 saturation = 1.02f,
                 bands = listOf(
@@ -1153,6 +1188,7 @@ object Profiles {
             "contax_t2", "Contax T2", "T2", Category.CAMERAS,
             "Premium point-and-shoot on colour neg. Warm, sharp, contrasty.",
             Look(
+                density = 0.02f, scan = 1f,
                 temp = 0.08f,
                 curve = Curve(contrast = 1.16f, shadows = -0.16f, highlights = 0.02f),
                 saturation = 1.08f,
@@ -1170,6 +1206,7 @@ object Profiles {
             "lca", "Lomo LC-A", "LCA", Category.CAMERAS,
             "Shoot from the hip. Saturated, contrasty, heavy vignette.",
             Look(
+                density = 0.03f, scan = 1f,
                 curve = Curve(contrast = 1.32f, shadows = -0.25f, highlights = 0.10f),
                 saturation = 1.30f,
                 green = Curve(highlights = 0.06f), blue = Curve(contrast = 0.9f, shadows = 0.06f),
@@ -1185,6 +1222,7 @@ object Profiles {
             "toycam", "Toy Camera", "TOY", Category.CAMERAS,
             "Plastic lens, leaky body. Dreamy glow, soft corners, light leaks.",
             Look(
+                density = 0.015f, scan = 1f,
                 temp = 0.06f,
                 curve = Curve(contrast = 1.2f, shadows = -0.18f, highlights = 0.06f),
                 saturation = 1.15f,
@@ -1215,7 +1253,7 @@ object Profiles {
         FilmProfile(
             "delta3200", "Delta 3200", "D32", Category.ILFORD,
             "Ultra-fast B&W. Bold, gritty grain for low light.",
-            Look(mono = Mono(0.30f, 0.56f, 0.14f), curve = Curve(contrast = 1.22f, shadows = -0.04f, highlights = 0.10f), black = Rgb.gray(0.03f)),
+            Look(mono = Mono(0.30f, 0.56f, 0.14f), curve = Curve(contrast = 1.10f, shadows = -0.02f, highlights = 0.10f), black = Rgb.gray(0.03f)),
             Effects(grain = 0.75f, grainSize = 0.75f),
         ),
     )

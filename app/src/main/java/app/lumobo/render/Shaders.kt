@@ -42,6 +42,7 @@ uniform int uMode;
 uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
 uniform sampler2D uStarMask; // star eraser (painted areas = 1)
 uniform float uMaskOn;
+uniform float uThresh;   // star threshold (0.6 = classic)
 $COMMON
 // Glint detection works on the photo as shot (no exposure gain), so the star count stays
 // stable however much the exposure slider is pushed.
@@ -70,7 +71,7 @@ void main() {
     }
     around /= 8.0;
     float peak = max(l - around, 0.0);
-    float k = smoothstep(0.6, 1.0, l) * smoothstep(0.02, 0.3, peak);
+    float k = smoothstep(uThresh, max(1.0, uThresh + 0.1), l) * smoothstep(0.02, 0.3, peak);
     float keep = uMaskOn > 0.5 ? 1.0 - texture(uStarMask, vUv).r : 1.0;
     fragColor = vec4(lin * k * k * 3.0 * keep, 1.0);
 }
@@ -108,12 +109,21 @@ uniform vec2 uDir;
 uniform int uTaps;
 uniform float uDecay;
 uniform vec3 uTint;
+uniform float uSpectral; // diffraction rainbow along the ray (0 = white)
 void main() {
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
         float w = exp(-fi * uDecay);
-        acc += (texture(uTex, vUv + uDir * fi).rgb + texture(uTex, vUv - uDir * fi).rgb) * w;
+        vec3 s = texture(uTex, vUv + uDir * fi).rgb + texture(uTex, vUv - uDir * fi).rgb;
+        if (uSpectral > 0.0) {
+            // A diffraction star splits light into colours that spread out along each arm.
+            float t = fi / float(uTaps);
+            vec3 spec = clamp(1.5 - abs(vec3(t * 2.2) - vec3(0.15, 0.55, 0.95)) * 3.0, 0.0, 1.0);
+            float y = dot(s, vec3(0.2126, 0.7152, 0.0722));
+            s = mix(s, y * spec * 1.6, uSpectral * smoothstep(0.03, 0.2, t));
+        }
+        acc += s * w;
     }
     // Normalise by the kernel's total weight so rays carry the source's energy.
     fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint, 1.0);

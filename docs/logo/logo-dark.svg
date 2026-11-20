@@ -1,12 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="560" height="170" viewBox="0 0 560 170">
-  <text x="40" y="104" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="68" font-weight="900" letter-spacing="14" fill="#F2EFE9">LUMOB</text>
-  <circle cx="395" cy="80" r="29.5" fill="#F2EBDD"/>
-  <circle cx="395" cy="80" r="27.00" fill="#E8463A"/>
-  <circle cx="395" cy="80" r="23.25" fill="#F28C28"/>
-  <circle cx="395" cy="80" r="19.50" fill="#F5C443"/>
-  <circle cx="395" cy="80" r="15.75" fill="#4FA35B"/>
-  <circle cx="395" cy="80" r="12.00" fill="#3C7BC0"/>
-  <circle cx="395" cy="80" r="8.25" fill="#0E0C0A"/>
-  <circle cx="390.14" cy="76.76" r="2.40" fill="#F2EBDD"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="170" viewBox="0 0 520 170">
+  <text x="40" y="104" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="68" font-weight="900" letter-spacing="14" fill="#F2EFE9">LUMOBO</text>
   <text x="43" y="142" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" letter-spacing="5.5" fill="#9C978F">FILM LAB FOR ANDROID</text>
 </svg>

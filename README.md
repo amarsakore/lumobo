@@ -52,6 +52,7 @@
 ### Looks
 - **88 looks in 10 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), **Fujifilm** simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), **Ricoh GR** image controls, **iPhone**-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), **Kodak** and **Fuji** film stocks, **cinema** stocks, **instant** film, **Ilford** B&amp;W, and **camera** styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
 - **Big, true-to-shape previews.** Every look is previewed on your own photo, in the photo's shape. Picking one shows what it does; tap it again for its **strength**, **frame** and **date stamp**.
+- **True to the stock.** Each film is checked against a ColorChecker chart for its contrast, casts, saturation and how it shifts skin, sky and foliage. Slide films build **dye density** (saturated colours get richer and darker, not brighter), and negative films get a gentle **lab scan**: like a minilab, each photo's exposure and colour balance are read first and partly corrected before the film's response.
 - **Film character.** Choose how much grain, halation and bloom every film starts with: **Off, Subtle, Natural or Dreamy**. Original always stays clean.
 - **My Looks.** Save any mix of film, sliders, effects and lens, then apply it to any photo with one tap.
 
@@ -60,7 +61,7 @@
 - **Color:** temperature, tint, vibrance and saturation; an 8-band **HSL Mixer**; Lightroom-style **Color Grading** wheels for shadows, midtones and highlights.
 - **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Edge-aware, so sharpening and clarity never draw glowing halos.
 - **Effects:** grain (size and colour), halation, bloom, vignette, chromatic aberration and four light-leak styles.
-- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl. A **star eraser** brush paints out lights you don't want to sparkle.
+- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl. Star filters have a **threshold** (which lights sparkle), **rainbow** diffraction rays, and a **star eraser** brush to paint out lights you don't want to sparkle.
 - **Crop like Lightroom:** aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), straighten dial, vertical and horizontal perspective, flips and 90° rotation. The frame stays put: drag to slide the photo, pinch to zoom it.
 - **Frames and imprints:** instant border, white border or 35mm film scan, plus a seven-segment LED date stamp in your colour and format.
 
@@ -68,8 +69,8 @@
 - **Compact editor.** Every tool sits in one scrolling bar. Panels keep one height, show whole controls only, and slide up smoothly to reveal everything, while the photo shrinks to stay in view.
 - **Preview** button to hide the tools and see your photo big, and **hold to compare** with the original.
 - **Undo, redo and Reset all.** A whole slider drag counts as one step; soft haptic ticks on every slider and dial.
-- **Library photos always open fresh.** Nothing goes to your gallery until you tap **Save**.
-- **Edit again any time.** Developed photos carry their full recipe, so *Edit Again* picks up exactly where you left off, and changes made while re-editing are auto-saved.
+- **Develops as you leave.** Going back (or closing the app) with edits develops the photo into **Developed** automatically. Library photos always open fresh.
+- **Edit again any time.** Developed photos carry their full recipe, so *Edit Again* picks up exactly where you left off and **Update** saves over the same photo.
 - **Light and dark themes** that follow your phone, and a **Material You** accent that takes your wallpaper's colour.
 
 ### Gallery
@@ -313,7 +314,7 @@ The model is baked into a **64³ 3D LUT**. An OpenGL ES 3 shader ([`Shaders.kt`]
 - **Tilt-shift, soft focus and swirl** blend in a graded, blurred layer. **Fisheye** uses a true tangent projection, and the circular version maps the whole frame into the circle.
 - **Grain** comes from a tileable, gaussian-clumped noise field sized to the frame.
 
-Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive. While you re-edit a developed photo, the same recipe is auto-saved as a draft on the phone.
+Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive. Leaving the editor develops your edit automatically; re-editing updates the same developed photo.
 
 Here is a complete look:
 
@@ -353,6 +354,9 @@ The colour engine is a plain Kotlin/JVM module, so you can tune looks on your co
 ./gradlew :film:test --tests '*ContactSheetTest*' \
   -Dcontact.in=/path/to/photos -Dcontact.out=/tmp/sheets -Dcontact.chunk=6
 
+# Measure every look on a ColorChecker chart (contrast, casts, saturation, density, hue shifts)
+./gradlew :film:test --tests '*FilmTraitsTest*' -i
+
 # Regenerate the README example images
 ./gradlew :film:test --tests '*ReadmeAssetsTest*' \
   -Dassets.in=/path/to/sources -Dassets.out=$PWD/docs/examples
@@ -372,7 +376,7 @@ app/
   render/Overlays.kt       LED date stamp and frames
   render/Images.kt         Decoding (EXIF-aware, sRGB) and saving with recipe + metadata
   editor/                  Editor state, undo/redo, recipes, re-edit resolution
-  data/                    Settings, My Looks, auto-saved drafts, gallery thumbnails
+  data/                    Settings, My Looks, gallery thumbnails
   ui/                      Compose screens: gallery, editor, viewer, settings
 docs/                      Logo, examples, screenshots
 ```

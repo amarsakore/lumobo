@@ -52,6 +52,7 @@ data class Recipe(
             put("st", fx.star.toDouble()); put("sp", fx.starPoints); put("sl", fx.starLength.toDouble()); put("sa", fx.starAngle.toDouble())
             put("sk", fx.streak.toDouble()); put("ts", fx.tiltShift.toDouble()); put("fy", fx.focusY.toDouble()); put("fs", fx.focusSize.toDouble())
             put("sf", fx.softFocus.toDouble()); put("sw", fx.swirl.toDouble())
+            put("sth", fx.starThreshold.toDouble()); put("ssp", fx.starSpectral.toDouble())
             if (fx.starMask.isNotEmpty()) put("sm", org.json.JSONArray().apply { fx.starMask.forEach { put((it * 10000).roundToInt() / 10000.0) } })
         })
         put("geo", JSONObject().apply {
@@ -112,6 +113,7 @@ data class Recipe(
                         star = x.f("st", 0f), starPoints = x.optInt("sp", 4), starLength = x.f("sl", 0.5f), starAngle = x.f("sa", 0f),
                         streak = x.f("sk", 0f), tiltShift = x.f("ts", 0f), focusY = x.f("fy", 0.55f), focusSize = x.f("fs", 0.25f),
                         softFocus = x.f("sf", 0f), swirl = x.f("sw", 0f),
+                        starThreshold = x.f("sth", 0.6f), starSpectral = x.f("ssp", 0f),
                         starMask = x.optJSONArray("sm")?.let { a -> List(a.length()) { a.getDouble(it).toFloat() } } ?: emptyList(),
                     ),
                     geo = Geometry(

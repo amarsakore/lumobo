@@ -137,6 +137,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.gestures.detectDragGestures
+import app.lumobo.editor.Background
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -177,7 +178,37 @@ fun EditorScreen(
         editor.start()
         onDispose { editor.dispose() }
     }
-    BackHandler(onBack = onBack)
+    // Leaving an edited photo develops it into Developed (library photos always reopen fresh;
+    // a developed photo is updated in place). The overlay shows while it develops.
+    val appContext = LocalContext.current.applicationContext
+    val leaveScope = rememberCoroutineScope()
+    var leaving by remember { mutableStateOf(false) }
+    val leave: () -> Unit = leave@{
+        if (leaving || editor.saving) return@leave
+        if (!editor.isDirty) { onBack(); return@leave }
+        leaving = true
+        leaveScope.launch {
+            val r = editor.save()
+            if (r.isSuccess) {
+                onSaved()
+                android.widget.Toast.makeText(appContext, if (target != null) "Updated in Developed" else "Saved to Developed", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            leaving = false
+            onBack()
+        }
+    }
+    BackHandler(onBack = leave)
+    // App closing / going to the background with unsaved edits: develop them too.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, editor) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && editor.isDirty && !editor.saving && !leaving) {
+                Background.scope.launch { if (editor.save().isSuccess) onSaved() }
+            }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
 
     var panel by rememberSaveable { mutableStateOf(Tool.FILMS) }
     val sheetState = remember { app.lumobo.ui.components.PanelSheet() }
@@ -214,7 +245,7 @@ fun EditorScreen(
             Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RoundIconButton(Icons.AutoMirrored.Outlined.ArrowBack, "Back", onBack, Modifier.size(34.dp))
+            RoundIconButton(Icons.AutoMirrored.Outlined.ArrowBack, "Back", leave, Modifier.size(34.dp))
             Spacer(Modifier.width(4.dp))
             RoundIconButton(
                 Icons.AutoMirrored.Outlined.Undo, "Undo", { editor.undo() },
@@ -823,9 +854,29 @@ private fun LensPanel(editor: EditorController) {
     val selected = LensPreset.entries.getOrElse(f.lens) { LensPreset.NONE }
     Column(Modifier.fillMaxWidth().padding(top = 2.dp)) {
         // Fixed height so switching recipes never moves the row below.
-        Column(Modifier.fillMaxWidth().height(38.dp).padding(start = 20.dp, end = 16.dp)) {
-            Text("LENS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold))
-            Text(selected.blurb, style = Type.Body.copy(fontSize = 11.5.sp, lineHeight = 14.sp), maxLines = 2)
+        Row(Modifier.fillMaxWidth().height(38.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("LENS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold))
+                Text(selected.blurb, style = Type.Body.copy(fontSize = 11.5.sp, lineHeight = 14.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (f.star > 0f || f.streak > 0f) {
+                // Star eraser lives in the header: paint on the photo where stars shouldn't appear.
+                if (f.starMask.isNotEmpty()) {
+                    Text(
+                        "CLEAR", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold),
+                        modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Palette.Line, RoundedCornerShape(50))
+                            .clickable { editor.clearStarMask() }.padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    if (editor.starBrush) "DONE" else "ERASE STARS",
+                    style = Type.Label.copy(color = if (editor.starBrush) Palette.Bg else Palette.Text, fontWeight = FontWeight.Bold),
+                    modifier = Modifier.clip(RoundedCornerShape(50))
+                        .then(if (editor.starBrush) Modifier.background(Palette.Amber) else Modifier.border(1.dp, Palette.Line, RoundedCornerShape(50)))
+                        .clickable { editor.starBrush = !editor.starBrush }.padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -845,11 +896,6 @@ private fun LensPanel(editor: EditorController) {
         }
         PanelColumn(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
             if (f.star > 0f || f.streak > 0f) {
-                // Star eraser: paint on the photo where stars shouldn't appear.
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip(if (editor.starBrush) "Erasing · tap to finish" else "Erase stars", editor.starBrush, { editor.starBrush = !editor.starBrush })
-                    if (f.starMask.isNotEmpty()) Chip("Clear", false, { editor.clearStarMask() })
-                }
                 if (editor.starBrush) {
                     FilmSlider("Brush size", editor.brushSize, { editor.brushSize = it }, min = 0f, max = 1f, default = 0.35f)
                 }
@@ -859,7 +905,11 @@ private fun LensPanel(editor: EditorController) {
             }
             if (f.star > 0f || selected in listOf(LensPreset.TWINKLE, LensPreset.STARBURST, LensPreset.SPARKLE)) {
                 FilmSlider("Glint", f.star, { editor.updateFx(f.copy(star = it)) }, min = 0f, max = 1f, default = 0f)
+                // Higher threshold: only the very brightest points sparkle.
+                FilmSlider("Threshold", f.starThreshold, { editor.updateFx(f.copy(starThreshold = it)) }, min = 0.3f, max = 0.95f, default = 0.6f,
+                    format = { "${((it - 0.3f) / 0.65f * 100).roundToInt()}" })
                 FilmSlider("Star size", f.starLength, { editor.updateFx(f.copy(starLength = it)) }, min = 0f, max = 1f, default = 0.5f)
+                FilmSlider("Rainbow", f.starSpectral, { editor.updateFx(f.copy(starSpectral = it)) }, min = 0f, max = 1f, default = 0f)
                 FilmSlider("Star angle", f.starAngle, { editor.updateFx(f.copy(starAngle = it)) }, min = 0f, max = 1f, default = 0f,
                     format = { "${(it * 180f / (f.starPoints / 2).coerceAtLeast(2)).roundToInt()}°" })
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
@@ -868,6 +918,10 @@ private fun LensPanel(editor: EditorController) {
             }
             if (f.streak > 0f || selected == LensPreset.ANAMORPHIC) {
                 FilmSlider("Streak", f.streak, { editor.updateFx(f.copy(streak = it)) }, min = 0f, max = 1f, default = 0f)
+                if (f.star <= 0f) {
+                    FilmSlider("Threshold", f.starThreshold, { editor.updateFx(f.copy(starThreshold = it)) }, min = 0.3f, max = 0.95f, default = 0.6f,
+                        format = { "${((it - 0.3f) / 0.65f * 100).roundToInt()}" })
+                }
             }
             if (f.tiltShift > 0f || selected == LensPreset.TILT) {
                 FilmSlider("Blur", f.tiltShift, { editor.updateFx(f.copy(tiltShift = it)) }, min = 0f, max = 1f, default = 0f)
