@@ -40,6 +40,8 @@ uniform sampler2D uSrc;
 uniform vec3 uGain;
 uniform int uMode;
 uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
+uniform sampler2D uStarMask; // star eraser (painted areas = 1)
+uniform float uMaskOn;
 $COMMON
 // Glint detection works on the photo as shot (no exposure gain), so the star count stays
 // stable however much the exposure slider is pushed.
@@ -69,7 +71,8 @@ void main() {
     around /= 8.0;
     float peak = max(l - around, 0.0);
     float k = smoothstep(0.6, 1.0, l) * smoothstep(0.02, 0.3, peak);
-    fragColor = vec4(lin * k * k * 3.0, 1.0);
+    float keep = uMaskOn > 0.5 ? 1.0 - texture(uStarMask, vUv).r : 1.0;
+    fragColor = vec4(lin * k * k * 3.0 * keep, 1.0);
 }
 """
 
@@ -192,8 +195,6 @@ uniform int uLeakStyle;
 uniform float uDistort;
 uniform float uCircle;
 uniform float uStar;
-uniform sampler2D uStarMask;
-uniform float uMaskOn;
 uniform float uTilt;
 uniform float uFocusY;
 uniform float uFocusSize;
@@ -476,8 +477,6 @@ void main() {
     }
     if (uStar > 0.0) {
         vec3 st = texture(uStarTex, suv).rgb;
-        // Brushed-out areas get no stars or streaks.
-        if (uMaskOn > 0.5) st *= 1.0 - texture(uStarMask, suv).r;
         lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(st, 0.0, 1.0));
     }
     if (uLeak > 0.0) {

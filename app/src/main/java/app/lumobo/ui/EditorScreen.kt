@@ -397,16 +397,19 @@ fun EditorScreen(
                         if (panel == Tool.LENS && editor.starBrush && shown != null) {
                             // Brush over the photo: paints where stars are erased.
                             var brushAt by remember { mutableStateOf<Offset?>(null) }
+                            // Keyed on nothing that changes while painting: every dab re-renders the
+                            // photo, and restarting the gesture would drop the stroke after one dab.
+                            val img by rememberUpdatedState(shown)
                             Box(
                                 Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)
-                                    .pointerInput(shown) {
-                                        val iw = shown.width.toFloat()
-                                        val ih = shown.height.toFloat()
+                                    .pointerInput(Unit) {
                                         fun paint(p: Offset) {
+                                            val iw = img.width.toFloat()
+                                            val ih = img.height.toFloat()
                                             val sc = kotlin.math.min(size.width / iw, size.height / ih)
                                             val nx = (p.x - (size.width - iw * sc) / 2f) / (iw * sc)
                                             val ny = (p.y - (size.height - ih * sc) / 2f) / (ih * sc)
-                                            if (nx in 0f..1f && ny in 0f..1f) editor.eraseStars(nx, ny, 0.05f)
+                                            if (nx in 0f..1f && ny in 0f..1f) editor.eraseStars(nx, ny, editor.brushRadius)
                                         }
                                         detectDragGestures(
                                             onDragStart = { brushAt = it; paint(it) },
@@ -417,7 +420,7 @@ fun EditorScreen(
                                     .drawWithContent {
                                         drawContent()
                                         brushAt?.let {
-                                            val r = kotlin.math.min(size.width, size.height * shown.width / shown.height.toFloat()) * 0.05f
+                                            val r = kotlin.math.min(size.width, size.height * shown.width / shown.height.toFloat()) * editor.brushRadius
                                             drawCircle(Color.White.copy(alpha = 0.25f), r, it)
                                             drawCircle(Color.White, r, it, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
                                         }
@@ -844,6 +847,9 @@ private fun LensPanel(editor: EditorController) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip(if (editor.starBrush) "Erasing · tap to finish" else "Erase stars", editor.starBrush, { editor.starBrush = !editor.starBrush })
                     if (f.starMask.isNotEmpty()) Chip("Clear", false, { editor.clearStarMask() })
+                }
+                if (editor.starBrush) {
+                    FilmSlider("Brush size", editor.brushSize, { editor.brushSize = it }, min = 0f, max = 1f, default = 0.35f)
                 }
             }
             if (f.distortion > 0f || selected in listOf(LensPreset.FISHEYE, LensPreset.CIRCLE, LensPreset.WIDE)) {

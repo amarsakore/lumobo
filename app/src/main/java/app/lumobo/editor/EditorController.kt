@@ -411,6 +411,9 @@ class EditorController(
 
     /** Star eraser: while on, dragging on the photo paints areas that get no stars. */
     var starBrush by mutableStateOf(false)
+    /** Eraser size, 0..1 (about 2% to 16% of the photo's width). */
+    var brushSize by mutableStateOf(0.35f)
+    val brushRadius get() = 0.02f + brushSize * 0.14f
 
     /** Paint the star eraser at ([nx], [ny]) of the shown frame (0..1), [radius] of its width. */
     fun eraseStars(nx: Float, ny: Float, radius: Float) {

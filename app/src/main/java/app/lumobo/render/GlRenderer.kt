@@ -298,6 +298,8 @@ class GlRenderer {
         val g = gains(adj)
         GLES30.glViewport(0, 0, fxW, fxH)
         GLES30.glDisable(GLES30.GL_BLEND)
+        // Star eraser: painted areas emit no glints, so they make no stars at all.
+        val maskId = if (fx.starMask.isNotEmpty() && (fx.star > 0f || fx.streak > 0f)) starMaskTexture(fx.starMask) else 0
         fun prefilter(mode: Int, dstFbo: Int) {
             GLES30.glUseProgram(progPrefilter)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, dstFbo)
@@ -307,6 +309,10 @@ class GlRenderer {
             GLES30.glUniform3f(uniform(progPrefilter, "uGain"), g[0], g[1], g[2])
             GLES30.glUniform1i(uniform(progPrefilter, "uMode"), mode)
             GLES30.glUniform2f(uniform(progPrefilter, "uPeak"), 7f / fxW, 7f / fxH)
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (maskId != 0) maskId else grainTex)
+            GLES30.glUniform1i(uniform(progPrefilter, "uStarMask"), 1)
+            GLES30.glUniform1f(uniform(progPrefilter, "uMaskOn"), if (maskId != 0) 1f else 0f)
             drawQuad()
         }
         fun blur(srcTex: Int, dstFbo: Int, dx: Float, dy: Float, sigma: Float) {
@@ -409,9 +415,6 @@ class GlRenderer {
         bind(8, GLES30.GL_TEXTURE_2D, fxTex[10], "uHaze")
         val curvesOn = !adj.curves.isIdentity
         bind(9, GLES30.GL_TEXTURE_2D, if (curvesOn) curveTexture(adj.curves) else grainTex, "uCurve")
-        val maskOn = fx.starMask.isNotEmpty() && (fx.star > 0f || fx.streak > 0f)
-        bind(10, GLES30.GL_TEXTURE_2D, if (maskOn) starMaskTexture(fx.starMask) else grainTex, "uStarMask")
-        GLES30.glUniform1f(uniform(p, "uMaskOn"), if (maskOn) 1f else 0f)
         val g = gains(adj)
         GLES30.glUniform1f(uniform(p, "uLutSize"), lutSize.toFloat())
         GLES30.glUniform1f(uniform(p, "uIntensity"), adj.intensity)
