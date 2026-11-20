@@ -125,9 +125,9 @@ class EditorController(
     private val draftKey = (target ?: uri).toString()
 
     init {
-        // Auto-saved edits win (they're the latest); else a developed photo's own recipe;
-        // else the photo opens as shot.
-        val start = drafts.load(draftKey) ?: initial
+        // A library photo always opens fresh, as shot. Re-editing a developed photo (Edit Again)
+        // picks up its auto-saved draft if there is one, else the recipe stored in the photo.
+        val start = if (target != null) drafts.load(draftKey) ?: initial else initial
         if (start != null) {
             profile = Profiles.byId(start.filmId)
             adj = start.adj
@@ -142,6 +142,7 @@ class EditorController(
 
     /** Auto-save: keep the current edit as this photo's draft (cleared when back to untouched). */
     private fun saveDraft() {
+        if (target == null) return  // only developed photos keep drafts
         val untouched = profile.isIdentity && adj == Adjustments() && geo == Geometry() &&
             fx == settings.effectsFor(Profiles.ORIGINAL) && initial == null
         if (untouched) drafts.clear(draftKey)
