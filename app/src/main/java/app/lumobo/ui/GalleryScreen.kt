@@ -157,7 +157,7 @@ fun GalleryScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Wordmark: the last "O" is the rainbow lens.
                     Text("LUMOB", style = Type.Wordmark)
-                    RainbowMark(Modifier.padding(start = 5.75.dp).size(17.dp))
+                    RainbowMark(Modifier.padding(start = 5.75.dp).size(18.dp))
                 }
             }
             RoundIconButton(Icons.Outlined.AddPhotoAlternate, "Pick from Google Photos or files", onClick = { pick() }, modifier = Modifier.size(38.dp))
