@@ -106,8 +106,19 @@ fun rememberSoftHaptics(): SoftHaptics {
 /** Editor tool panel: [overflow] when its controls don't fit, [expanded] when pulled up. */
 @Stable
 class PanelSheet {
-    var expanded by mutableStateOf(false)
+    private var _expanded by mutableStateOf(false)
+    /** Pulled up. Changing it starts a short settle, during which controls slide rather than pop. */
+    var expanded: Boolean
+        get() = _expanded
+        set(v) {
+            if (v != _expanded) settleUntil = android.os.SystemClock.uptimeMillis() + SETTLE_MS
+            _expanded = v
+        }
+    var settleUntil = 0L
+    /** Bumped when a settle ends, so panels re-lay out without the extra controls. */
+    var settleTick by androidx.compose.runtime.mutableIntStateOf(0)
     var overflow by mutableStateOf(false)
+    companion object { const val SETTLE_MS = 460L }
     val open get() = expanded && overflow
 }
 
@@ -147,10 +158,15 @@ fun PanelColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
         }
         val over = shown < placeables.size
         if (over || !sheet.open) sheet.overflow = over
+        // While the panel is sliding, keep placing the controls that no longer fit: the panel
+        // clips them, so they glide out of view instead of vanishing before it moves.
+        sheet.settleTick
+        val settling = android.os.SystemClock.uptimeMillis() < sheet.settleUntil
+        val placed = if (settling) placeables.size else shown
         val w = if (constraints.hasBoundedWidth) constraints.maxWidth else placeables.maxOfOrNull { it.width } ?: 0
         layout(w, maxOf(h, constraints.minHeight)) {
             var y = 0
-            for (i in 0 until shown) { placeables[i].place(0, y); y += placeables[i].height }
+            for (i in 0 until placed) { placeables[i].place(0, y); y += placeables[i].height }
         }
     }
 }

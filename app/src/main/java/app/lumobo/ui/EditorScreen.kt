@@ -130,6 +130,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -397,6 +398,10 @@ fun EditorScreen(
         )
         val conf = LocalConfiguration.current
         val maxPanel = (conf.screenHeightDp * 0.58f).dp
+        LaunchedEffect(sheetState.expanded) {
+            delay(app.lumobo.ui.components.PanelSheet.SETTLE_MS + 20)
+            sheetState.settleTick++
+        }
         // Panel height follows the photo: a tall photo keeps the panel compact (pull up for
         // more), a wide one leaves room for a taller panel. Tools shorter than that shrink to fit.
         val (srcW, srcH) = editor.sourceSize
@@ -433,7 +438,8 @@ fun EditorScreen(
                     // Up to panelH (Crop always fits whole); a pulled-up panel grows smoothly
                     // to show all of its controls.
                     .heightIn(max = if (open || panel == Tool.CROP) maxPanel else panelH)
-                    .animateContentSize(androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                    .clipToBounds()
+                    .animateContentSize(androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
                     .nestedScroll(sheet)
                     .then(sheetDrag),
             ) {
