@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="180" viewBox="0 0 760 180">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1F1F23"/><stop offset="1" stop-color="#0E0E10"/></linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFCB5C"/><stop offset="1" stop-color="#F2A93B"/></linearGradient>
+  </defs>
+  <g transform="translate(10 10) scale(0.3125)">
+    <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+    <g transform="translate(256 256) scale(6.2) translate(-54 -54)">
+    <path fill="url(#amber)" d="M30,36 h48 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-28 a4,4 0 0 1 4,-4z M31,41 v26 h46 v-26z"/>
+    <path fill="#141416" d="M33,37.5 h3 v2 h-3z M40,37.5 h3 v2 h-3z M47,37.5 h3 v2 h-3z M54,37.5 h3 v2 h-3z M61,37.5 h3 v2 h-3z M68,37.5 h3 v2 h-3z M33,68.5 h3 v2 h-3z M40,68.5 h3 v2 h-3z M47,68.5 h3 v2 h-3z M54,68.5 h3 v2 h-3z M61,68.5 h3 v2 h-3z M68,68.5 h3 v2 h-3z"/>
+    <circle cx="54" cy="54" r="10" fill="url(#amber)"/>
+    <circle cx="54" cy="54" r="7" fill="#141416"/>
+    <circle cx="54" cy="54" r="3.5" fill="#FF7A3D"/>
+    <circle cx="51.6" cy="51.8" r="1.1" fill="#FFF3D6" opacity="0.9"/>
+  </g>
+  </g>
+  <text x="200" y="104" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="68" font-weight="900" letter-spacing="14" fill="#151517">EMULSION<tspan dx="-4" dy="-26" font-size="26" fill="#FF7A3D">&#9679;</tspan></text>
+  <text x="203" y="142" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="600" letter-spacing="5.5" fill="#6B665F">FILM LAB FOR ANDROID</text>
+</svg>

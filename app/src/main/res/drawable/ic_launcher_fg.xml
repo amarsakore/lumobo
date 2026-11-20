@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lens aperture inside a film frame. 108dp canvas, 72dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- film frame -->
+    <path android:fillColor="#F5B841"
+        android:pathData="M30,36 h48 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-28 a4,4 0 0 1 4,-4z M31,41 v26 h46 v-26z"/>
+    <!-- sprocket holes -->
+    <path android:fillColor="#141416"
+        android:pathData="M33,37.5 h3 v2 h-3z M40,37.5 h3 v2 h-3z M47,37.5 h3 v2 h-3z M54,37.5 h3 v2 h-3z M61,37.5 h3 v2 h-3z M68,37.5 h3 v2 h-3z M33,68.5 h3 v2 h-3z M40,68.5 h3 v2 h-3z M47,68.5 h3 v2 h-3z M54,68.5 h3 v2 h-3z M61,68.5 h3 v2 h-3z M68,68.5 h3 v2 h-3z"/>
+    <!-- lens -->
+    <path android:fillColor="#F5B841"
+        android:pathData="M54,44 a10,10 0 1 1 0,20 a10,10 0 1 1 0,-20z"/>
+    <path android:fillColor="#141416"
+        android:pathData="M54,47 a7,7 0 1 1 0,14 a7,7 0 1 1 0,-14z"/>
+    <path android:fillColor="#FF7A3D"
+        android:pathData="M54,50.5 a3.5,3.5 0 1 1 0,7 a3.5,3.5 0 1 1 0,-7z"/>
+</vector>
