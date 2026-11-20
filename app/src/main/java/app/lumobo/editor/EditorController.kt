@@ -122,7 +122,9 @@ class EditorController(
     private val dirty = Channel<Unit>(Channel.CONFLATED)
 
     /** Where the next save goes: the developed photo being re-edited, or the one this session made. */
-    private var saveTarget: Uri? = target
+    private var saveTarget by mutableStateOf<Uri?>(target)
+    /** A developed photo exists for this edit, so saving can update it or make a copy. */
+    val hasSaveTarget get() = saveTarget != null
     private var savedSnap: Snapshot? = null
 
     init {
@@ -500,7 +502,8 @@ class EditorController(
     fun resetEffects() = updateFx(settings.effectsFor(profile).copy(dateStamp = fx.dateStamp, frame = fx.frame).withLensOf(fx))
 
     /** Develop at full resolution and save to the gallery (replacing [target] when re-editing). */
-    suspend fun save(): Result<Uri> {
+    /** Develop at full resolution: update the developed photo, or with [asCopy] add a new one. */
+    suspend fun save(asCopy: Boolean = false): Result<Uri> {
         saving = true
         val p = profile
         val a = adj
@@ -534,7 +537,7 @@ class EditorController(
             val recipe = Recipe(uri, p.id, a, f, g)
             val options = Images.SaveOptions(settings.jpegQuality, settings.keepCameraInfo, settings.keepLocation)
             val name = if (p.isIdentity) "Original" else p.name
-            val saved = withContext(Dispatchers.IO) { Images.saveJpeg(context, result, uri, name, recipe, options, saveTarget) }
+            val saved = withContext(Dispatchers.IO) { Images.saveJpeg(context, result, uri, name, recipe, options, if (asCopy) null else saveTarget) }
             result.recycle()
             // Later saves in this session update the same developed photo instead of adding copies.
             saveTarget = saved

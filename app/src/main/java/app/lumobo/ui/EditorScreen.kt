@@ -138,6 +138,8 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.gestures.detectDragGestures
 import app.lumobo.editor.Background
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.ContentCopy
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -293,31 +295,57 @@ fun EditorScreen(
                 Icon(Icons.Outlined.Compare, "Hold to compare", tint = if (comparing) Palette.Bg else Palette.Text, modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.width(6.dp))
-            Box(
-                Modifier
-                    .height(34.dp)
-                    .width(68.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Palette.Amber)
-                    .clickable(enabled = !editor.saving && editor.status == EditorStatus.Ready) {
-                        panel = if (panel == Tool.CROP) Tool.FILMS else panel
-                        scope.launch {
-                            val r = editor.save()
-                            toast = r.fold(
-                                onSuccess = {
-                                    onSaved()
-                                    (if (it == target) "Updated in Developed" else "Developed · saved to your gallery") to it
-                                },
-                                onFailure = { ("Couldn't save: " + (it.message ?: "unknown error")) to null },
-                            )
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (editor.saving) {
-                    CircularProgressIndicator(color = Palette.Bg, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
-                } else {
-                    Text(if (target != null) "UPDATE" else "SAVE", color = Palette.Bg, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
+            // Save: the first save of a library photo goes straight to Developed; once a developed
+            // photo exists (re-editing, or saved earlier this session) it offers Update or a copy.
+            var saveMenu by remember { mutableStateOf(false) }
+            fun doSave(asCopy: Boolean) {
+                val updating = editor.hasSaveTarget && !asCopy
+                panel = if (panel == Tool.CROP) Tool.FILMS else panel
+                scope.launch {
+                    val r = editor.save(asCopy)
+                    toast = r.fold(
+                        onSuccess = {
+                            onSaved()
+                            (if (asCopy) "Saved as a copy in Developed" else if (updating) "Updated in Developed" else "Developed · saved to your gallery") to it
+                        },
+                        onFailure = { ("Couldn't save: " + (it.message ?: "unknown error")) to null },
+                    )
+                }
+            }
+            Box {
+                Box(
+                    Modifier
+                        .height(34.dp)
+                        .width(68.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Palette.Amber)
+                        .clickable(enabled = !editor.saving && editor.status == EditorStatus.Ready) {
+                            if (editor.hasSaveTarget) saveMenu = true else doSave(false)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (editor.saving) {
+                        CircularProgressIndicator(color = Palette.Bg, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                    } else {
+                        Text(if (target != null) "UPDATE" else "SAVE", color = Palette.Bg, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
+                    }
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = saveMenu,
+                    onDismissRequest = { saveMenu = false },
+                    containerColor = Palette.Surface2,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Update", color = Palette.Text, fontWeight = FontWeight.SemiBold) },
+                        leadingIcon = { Icon(Icons.Outlined.Save, null, tint = Palette.Text) },
+                        onClick = { saveMenu = false; doSave(false) },
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Save as copy", color = Palette.Text, fontWeight = FontWeight.SemiBold) },
+                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = Palette.Text) },
+                        onClick = { saveMenu = false; doSave(true) },
+                    )
                 }
             }
         }
