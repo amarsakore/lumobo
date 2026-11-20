@@ -17,10 +17,11 @@ class AppSettings private constructor(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("lumobo_settings", Context.MODE_PRIVATE)
 
     // ── Film character
-    var characterOn by bool("character_on", true)
-    var grainLevel by float("grain_level", 1f)
-    var halationLevel by float("halation_level", 1f)
-    var bloomLevel by float("bloom_level", 1f)
+    /** 0 Off (each film's own texture only), 1 Subtle 75%, 2 Natural 100%, 3 Dreamy 125%. */
+    var characterStyle by int("character_style", 2)
+
+    // ── Appearance: 0 follow the system, 1 light, 2 dark
+    var themeMode by int("theme_mode", 0)
 
     // ── New edits
     var lastFilmId by string("last_film", "original")
@@ -40,7 +41,10 @@ class AppSettings private constructor(context: Context) {
     var showScreenshots by bool("show_screenshots", true)
     var haptics by bool("haptics", true)
 
-    val levels get() = CharacterLevels(grainLevel, halationLevel, bloomLevel)
+    val levels: CharacterLevels get() {
+        val l = when (characterStyle) { 1 -> 0.75f; 3 -> 1.25f; else -> 1f }
+        return CharacterLevels(l, l, l)
+    }
 
     /** Most pixels a developed photo may have, from [exportSize]. */
     val maxExportPixels: Long
@@ -53,7 +57,7 @@ class AppSettings private constructor(context: Context) {
 
     /** Effects a film starts with, honouring the film-character and default settings. */
     fun effectsFor(p: FilmProfile): Effects {
-        var e = Character.effects(p, characterOn, levels)
+        var e = Character.effects(p, characterStyle != 0, levels)
         if (dateStampDefault) e = e.copy(dateStamp = true)
         val frame = runCatching { FrameStyle.valueOf(defaultFrame) }.getOrDefault(FrameStyle.NONE)
         if (e.frame == FrameStyle.NONE && frame != FrameStyle.NONE) e = e.copy(frame = frame)

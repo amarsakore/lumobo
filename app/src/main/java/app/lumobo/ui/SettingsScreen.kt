@@ -79,22 +79,18 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
 
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = bottom + 24.dp)) {
+            Section("Appearance") {
+                ChoiceRow("Theme", listOf("System", "Light", "Dark"), s.themeMode) { s.themeMode = it }
+            }
+
             Section("Film character") {
                 Text(
-                    "How strong each film's grain, halation and bloom start out. 100% is the film's own amount; " +
-                        "you can still fine-tune every photo in Effects. Original is never touched.",
+                    "Grain, halation and bloom every film starts with. Off keeps each film's own texture only; " +
+                        "you can still fine-tune any photo in Effects. Original is never touched.",
                     style = Type.Body.copy(fontSize = 12.sp, lineHeight = 16.sp),
                     modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 4.dp),
                 )
-                val pct: (Float) -> String = { "${(it * 100).roundToInt()}%" }
-                FilmSlider("Grain", s.grainLevel, { s.grainLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
-                FilmSlider("Halation", s.halationLevel, { s.halationLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
-                FilmSlider("Bloom", s.bloomLevel, { s.bloomLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
-                SwitchRow(
-                    "Add texture to clean films",
-                    "Films that have no grain of their own (like Provia) get a light, matching dose.",
-                    s.characterOn,
-                ) { s.characterOn = it }
+                ChoiceRow("Style", listOf("Off", "Subtle", "Natural", "Dreamy"), s.characterStyle) { s.characterStyle = it }
             }
 
             Section("New edits") {
@@ -131,7 +127,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Lumobo 1.3.3", style = Type.Title.copy(fontSize = 15.sp))
+                        Text("Lumobo 1.4", style = Type.Title.copy(fontSize = 15.sp))
                         Text("${Profiles.all.size - 1} films and camera looks · source code on GitHub", style = Type.Body.copy(fontSize = 12.sp))
                     }
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = Palette.TextDim, modifier = Modifier.size(18.dp))

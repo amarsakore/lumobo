@@ -32,6 +32,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -248,29 +254,54 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
     val cellPx = with(androidx.compose.ui.platform.LocalDensity.current) {
         (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx() / columns.coerceIn(2, 6)).toInt().coerceIn(160, 720)
     }
+    val gridState = rememberLazyGridState()
+    // Month of every grid item (headers included), for the date shown while scrolling.
+    val itemMonths = remember(sections) { sections.flatMap { (m, l) -> List(l.size + 1) { m } } }
+    // Live pinch scale: the grid follows your fingers, then settles on the new column count.
+    var pinchScale by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+    var pinchOrigin by remember { mutableStateOf(androidx.compose.ui.graphics.TransformOrigin.Center) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Box(Modifier.fillMaxSize()) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns.coerceIn(2, 6)),
-        state = rememberLazyGridState(),
+        state = gridState,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
         contentPadding = PaddingValues(bottom = bottom + 16.dp),
-        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-            // Pinch in / out to show more or fewer photos per row.
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                var acc = 1f
-                do {
-                    val ev = awaitPointerEvent(PointerEventPass.Initial)
-                    if (ev.changes.count { it.pressed } >= 2) {
-                        acc *= ev.calculateZoom()
-                        val cols = settings.gridColumns
-                        if (acc > 1.3f && cols > 2) { settings.gridColumns = cols - 1; acc = 1f }
-                        else if (acc < 0.77f && cols < 6) { settings.gridColumns = cols + 1; acc = 1f }
-                        ev.changes.forEach { it.consume() }
+        modifier = Modifier.fillMaxSize()
+            .graphicsLayer { scaleX = pinchScale; scaleY = pinchScale; transformOrigin = pinchOrigin }
+            .pointerInput(Unit) {
+                // Pinch in / out to show more or fewer photos per row. The grid scales live with
+                // the fingers; when it switches columns the scale is compensated so nothing jumps.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    var pinched = false
+                    do {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        if (ev.changes.count { it.pressed } >= 2) {
+                            if (!pinched) {
+                                pinched = true
+                                val c = ev.calculateCentroid()
+                                pinchOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                    (c.x / size.width).coerceIn(0f, 1f), (c.y / size.height).coerceIn(0f, 1f),
+                                )
+                            }
+                            var sc = pinchScale * ev.calculateZoom()
+                            val cols = settings.gridColumns
+                            if (sc > 1.25f && cols > 2) { settings.gridColumns = cols - 1; sc *= (cols - 1f) / cols }
+                            else if (sc < 0.8f && cols < 6) { settings.gridColumns = cols + 1; sc *= (cols + 1f) / cols }
+                            pinchScale = sc.coerceIn(0.75f, 1.35f)
+                            ev.changes.forEach { it.consume() }
+                        }
+                    } while (ev.changes.any { it.pressed })
+                    if (pinched) {
+                        val from = pinchScale
+                        scope.launch {
+                            androidx.compose.animation.core.animate(from, 1f, animationSpec = androidx.compose.animation.core.spring(stiffness = 500f)) { v, _ -> pinchScale = v }
+                        }
                     }
-                } while (ev.changes.any { it.pressed })
-            }
-        },
+                }
+            },
     ) {
         sections.forEach { (month, list) ->
             item(span = { GridItemSpan(maxLineSpan) }, key = "h_$month", contentType = "header") {
@@ -291,6 +322,60 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
                         .clickable { onClick(images, index) },
                 )
             }
+        }
+    }
+    DateScroller(gridState, itemMonths, Modifier.align(Alignment.TopEnd).padding(bottom = bottom + 8.dp))
+    }
+}
+
+/** Google Photos-style fast scroller: a handle with the month you're at, shown while scrolling. */
+@Composable
+private fun DateScroller(state: androidx.compose.foundation.lazy.grid.LazyGridState, months: List<String>, modifier: Modifier) {
+    if (months.size < 40) return
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var visible by remember { mutableStateOf(false) }
+    val scrolling = state.isScrollInProgress
+    LaunchedEffect(scrolling, dragging) {
+        if (scrolling || dragging) visible = true
+        else { kotlinx.coroutines.delay(1200); visible = false }
+    }
+    val total = months.size
+    val first = state.firstVisibleItemIndex.coerceIn(0, total - 1)
+    val frac = first.toFloat() / (total - 1).coerceAtLeast(1)
+    val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "scroller")
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxHeight().width(200.dp).graphicsLayer { this.alpha = alpha }) {
+        val trackPx = constraints.maxHeight.toFloat()
+        val handleH = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
+        val y = (trackPx - handleH) * frac
+        Row(
+            Modifier.align(Alignment.TopEnd).offset { androidx.compose.ui.unit.IntOffset(0, y.toInt()) }
+                .pointerInput(total, visible) {
+                    // Only grabbable while shown, so it never steals scrolls from the photos.
+                    if (total == 0 || !visible) return@pointerInput
+                    detectVerticalDragGestures(
+                        onDragStart = { dragging = true },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { ch, _ ->
+                        ch.consume()
+                        val pos = (y + ch.position.y - handleH / 2f).coerceIn(0f, trackPx - handleH)
+                        val target = ((pos / (trackPx - handleH)) * (total - 1)).toInt()
+                        scope.launch { state.scrollToItem(target) }
+                    }
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                months[first].substringBefore(" ").take(3) + " " + months[first].substringAfter(" "),
+                style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold),
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.Surface2).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier.padding(end = 4.dp).width(6.dp).height(44.dp).clip(RoundedCornerShape(3.dp))
+                    .background(if (dragging) Palette.Amber else Palette.TextDim),
+            )
         }
     }
 }

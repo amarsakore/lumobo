@@ -208,7 +208,7 @@ fun FilmSlider(
                 val xd = xOf(default)
                 drawCircle(Palette.TextFaint, radius = 2.5.dp.toPx(), center = Offset(xd, cy + 8.dp.toPx()))
             }
-            drawCircle(Color.White, radius = 6.5.dp.toPx(), center = Offset(x1, cy))
+            drawCircle(Palette.Thumb, radius = 6.5.dp.toPx(), center = Offset(x1, cy))
             if (changed) drawCircle(Palette.Amber, radius = 3.dp.toPx(), center = Offset(x1, cy))
         }
     }

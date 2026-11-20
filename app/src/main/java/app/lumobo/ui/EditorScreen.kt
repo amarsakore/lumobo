@@ -400,8 +400,10 @@ fun EditorScreen(
             }
             Box(
                 Modifier.fillMaxWidth()
-                    .heightIn(max = if (open) maxPanel else PANEL_H)
-                    .animateContentSize()
+                    // Same height for every tool, so the photo doesn't jump when switching;
+                    // a pulled-up panel grows (smoothly) to fit all of its controls.
+                    .then(if (open) Modifier.heightIn(min = PANEL_H, max = maxPanel) else Modifier.height(PANEL_H))
+                    .animateContentSize(androidx.compose.animation.core.tween(320, easing = androidx.compose.animation.core.FastOutSlowInEasing))
                     .nestedScroll(sheet)
                     .then(sheetDrag),
             ) {
@@ -485,7 +487,7 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
     // Tap the selected film again to dial its strength (in place of the category row).
     var strengthOpen by remember { mutableStateOf(false) }
     val strength = strengthOpen && !p.isIdentity
-    Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 2.dp, bottom = 6.dp), verticalArrangement = Arrangement.Center) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             Crossfade(strength, label = "strength") { dial ->
                 if (dial) {
@@ -543,10 +545,10 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
 
 @Composable
 private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, adjustable: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(82.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(88.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(74.dp)
+                .size(80.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(Palette.Surface2)
                 .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Amber else Color.Transparent, RoundedCornerShape(14.dp)),
