@@ -143,10 +143,10 @@ internal enum class Tool(val label: String, val icon: ImageVector) {
     EFFECTS("Effects", Icons.Outlined.Grain),
     LENS("Lens", Icons.Outlined.Camera),
     CROP("Crop", Icons.Outlined.Crop),
-    FRAME("Frame", Icons.Outlined.CropFree),
 }
 
-private val PRIMARY = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.CROP)
+/** Every tool lives in the bottom bar (it scrolls); Curves opens from Light, My Looks and Frame from Films. */
+private val BAR = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.CROP, Tool.LENS, Tool.DETAIL, Tool.MIXER, Tool.GRADING)
 
 /** Tools whose panel can be pulled up to show every control at once. */
 private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP)
@@ -171,7 +171,6 @@ fun EditorScreen(
     BackHandler(onBack = onBack)
 
     var panel by rememberSaveable { mutableStateOf(Tool.FILMS) }
-    var drawer by remember { mutableStateOf(false) }
     val sheetState = remember { app.lumobo.ui.components.PanelSheet() }
     var comparing by remember { mutableStateOf(false) }
     var straightening by remember { mutableStateOf(false) }
@@ -365,10 +364,10 @@ fun EditorScreen(
         // handle on Films (or the tab bar) up for every tool.
         // Panels are as tall as their controls (up to PANEL_H). One that has more controls
         // than fit can be pulled up until all of them show; pull down to shrink it again.
-        val canExpand = !drawer && panel !in FIXED && sheetState.overflow
-        val open = !drawer && sheetState.open
+        val canExpand = panel !in FIXED && sheetState.overflow
+        val open = sheetState.open
         val sheet = rememberPanelSheet(
-            canExpand = { !drawer && panel !in FIXED && sheetState.overflow },
+            canExpand = { panel !in FIXED && sheetState.overflow },
             isExpanded = { sheetState.open },
             onExpand = { sheetState.expanded = it },
         )
@@ -380,28 +379,23 @@ fun EditorScreen(
                 else if (dragAcc[0] > 36f) { onDown(); dragAcc[0] = 0f; ch.consume() }
             }
         }
-        fun expandable() = !drawer && panel !in FIXED && sheetState.overflow
-        val handleDrag = verticalDrag(
-            onUp = { if (expandable()) sheetState.expanded = true else drawer = true },
-            onDown = { if (drawer) drawer = false else sheetState.expanded = false },
-        )
-        val tabDrag = verticalDrag(onUp = { drawer = true }, onDown = { if (drawer) drawer = false else sheetState.expanded = false })
-        val bodyDrag = verticalDrag(
+        fun expandable() = panel !in FIXED && sheetState.overflow
+        val sheetDrag = verticalDrag(
             onUp = { if (expandable()) sheetState.expanded = true },
             onDown = { sheetState.expanded = false },
         )
         val maxPanel = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
         Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
             Box(
-                Modifier.fillMaxWidth().height(14.dp).then(handleDrag)
+                Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        if (expandable()) sheetState.expanded = !sheetState.open else drawer = !drawer
+                        if (expandable()) sheetState.expanded = !sheetState.open
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
                     Modifier.width(32.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(if (drawer || open) Palette.Amber else if (canExpand) Palette.TextFaint else Palette.Surface3),
+                        .background(if (open) Palette.Amber else if (canExpand) Palette.TextFaint else Palette.Surface3),
                 )
             }
             Box(
@@ -409,40 +403,38 @@ fun EditorScreen(
                     .heightIn(max = if (open) maxPanel else PANEL_H)
                     .animateContentSize()
                     .nestedScroll(sheet)
-                    .then(bodyDrag),
+                    .then(sheetDrag),
             ) {
               CompositionLocalProvider(app.lumobo.ui.components.LocalPanelSheet provides sheetState) {
-                Crossfade(drawer, label = "drawer") { showGrid ->
-                    if (showGrid) {
-                        ToolGrid(panel, onPick = { panel = it; drawer = false }, onResetAll = { editor.resetAll(); drawer = false })
-                    } else when (panel) {
-                        Tool.FILMS -> FilmsPanel(editor, onPicked = { filmNote = if (it.isIdentity) null else it }) { panel = Tool.LOOKS }
-                        Tool.LOOKS -> LooksPanel(editor)
-                        Tool.LIGHT -> LightPanel(editor)
-                        Tool.COLOR -> ColorPanel(editor)
-                        Tool.MIXER -> MixerPanel(editor)
-                        Tool.GRADING -> GradingPanel(editor)
-                        Tool.CURVES -> CurvesPanel(editor)
-                        Tool.DETAIL -> DetailPanel(editor)
-                        Tool.EFFECTS -> EffectsPanel(editor)
-                        Tool.LENS -> LensPanel(editor)
-                        Tool.CROP -> CropPanel(editor) { straightening = it }
-                        Tool.FRAME -> FramePanel(editor)
-                    }
+                when (panel) {
+                    Tool.FILMS -> FilmsPanel(editor, onPicked = { filmNote = if (it.isIdentity) null else it }) { panel = Tool.LOOKS }
+                    Tool.LOOKS -> LooksPanel(editor)
+                    Tool.LIGHT -> LightPanel(editor) { panel = Tool.CURVES }
+                    Tool.COLOR -> ColorPanel(editor)
+                    Tool.MIXER -> MixerPanel(editor)
+                    Tool.GRADING -> GradingPanel(editor)
+                    Tool.CURVES -> CurvesPanel(editor) { panel = Tool.LIGHT }
+                    Tool.DETAIL -> DetailPanel(editor)
+                    Tool.EFFECTS -> EffectsPanel(editor)
+                    Tool.LENS -> LensPanel(editor)
+                    Tool.CROP -> CropPanel(editor) { straightening = it }
                 }
               }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Line))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(tabDrag), horizontalArrangement = Arrangement.SpaceEvenly) {
-                PRIMARY.forEach { t ->
-                    BottomTab(t.icon, t.label, !drawer && panel == t, { panel = t; drawer = false }, Modifier.weight(1f))
+            // Scrolling tool bar: the tab for a sub-tool (Curves, My Looks) stays lit on its parent.
+            val active = when (panel) { Tool.CURVES -> Tool.LIGHT; Tool.LOOKS -> Tool.FILMS; else -> panel }
+            val barState = rememberLazyListState()
+            LaunchedEffect(active) {
+                val i = BAR.indexOf(active)
+                if (i >= 0 && barState.layoutInfo.visibleItemsInfo.none { it.index == i && it.offset >= 0 && it.offset + it.size <= barState.layoutInfo.viewportEndOffset }) {
+                    barState.animateScrollToItem(maxOf(0, i - 2))
                 }
-                val other = panel !in PRIMARY
-                BottomTab(
-                    if (other && !drawer) panel.icon else Icons.Outlined.Apps,
-                    if (other && !drawer) panel.label else "More",
-                    drawer || other, { drawer = !drawer }, Modifier.weight(1f),
-                )
+            }
+            LazyRow(state = barState, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp)) {
+                items(BAR) { t ->
+                    BottomTab(t.icon, t.label, active == t, { panel = t }, Modifier.width(66.dp))
+                }
             }
         }
     }
@@ -485,34 +477,6 @@ private fun rememberPanelSheet(
 }
 
 @Composable
-private fun ToolGrid(current: Tool, onPick: (Tool) -> Unit, onResetAll: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
-        Text("MORE TOOLS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold, fontSize = 10.sp), modifier = Modifier.padding(start = 10.dp, bottom = 2.dp))
-        // Only what the bottom bar doesn't already have.
-        val cells: List<Tool?> = Tool.entries.filter { it !in PRIMARY } + listOf(null)
-        cells.chunked(4).forEach { row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { t ->
-                    val sel = t == current
-                    Column(
-                        Modifier.weight(1f).height(44.dp).padding(2.dp).clip(RoundedCornerShape(12.dp))
-                            .background(if (sel) Palette.Surface3 else Color.Transparent)
-                            .clickable { if (t == null) onResetAll() else onPick(t) },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(t?.icon ?: Icons.Outlined.RestartAlt, null, tint = if (sel) Palette.Amber else if (t == null) Palette.Red else Palette.Text, modifier = Modifier.size(19.dp))
-                        Spacer(Modifier.height(3.dp))
-                        Text(t?.label ?: "Reset all", fontSize = 10.5.sp, color = if (sel) Palette.Amber else Palette.TextDim, maxLines = 1)
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-@Composable
 private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit, onLooks: () -> Unit) {
     var category by rememberSaveable { mutableStateOf(editor.profile.category ?: editor.lastCategory ?: Category.VIBES) }
     LaunchedEffect(category) { editor.prefetch(category) }
@@ -522,13 +486,26 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
     var strengthOpen by remember { mutableStateOf(false) }
     val strength = strengthOpen && !p.isIdentity
     Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
-        Box(Modifier.fillMaxWidth().height(40.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             Crossfade(strength, label = "strength") { dial ->
                 if (dial) {
-                    FilmSlider(
-                        "${p.name} strength", editor.adj.intensity, { editor.updateAdj(editor.adj.copy(intensity = it)) },
-                        min = 0f, max = 1f, default = 1f, format = { "${(it * 100).roundToInt()}%" },
-                    )
+                    val fx = editor.fx
+                    Column {
+                        FilmSlider(
+                            "${p.name} strength", editor.adj.intensity, { editor.updateAdj(editor.adj.copy(intensity = it)) },
+                            min = 0f, max = 1f, default = 1f, format = { "${(it * 100).roundToInt()}%" },
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                Text("FRAME", style = Type.Label, modifier = Modifier.padding(top = 6.dp, end = 2.dp))
+                            }
+                            items(FrameStyle.entries) { st ->
+                                Chip(if (st == FrameStyle.NONE) "No frame" else st.label, fx.frame == st, { editor.updateFx(editor.fx.copy(frame = st)) })
+                            }
+                            item { Chip("Date stamp", fx.dateStamp, { editor.updateFx(editor.fx.copy(dateStamp = !editor.fx.dateStamp)) }) }
+                        }
+                    }
                 } else {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         item { AddLookChip(onLooks) }
@@ -810,74 +787,4 @@ private fun AspectCard(label: String, ratio: Float?, selected: Boolean, onClick:
     }
 }
 
-@Composable
-private fun FramePanel(editor: EditorController) {
-    val f = editor.fx
-    Column(Modifier.fillMaxWidth().panelScroll().padding(top = 2.dp)) {
-        Text("FRAME", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold), modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 12.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FrameStyle.entries.forEach { style ->
-                FrameOption(style, f.frame == style, Modifier.weight(1f)) { editor.updateFx(f.copy(frame = style)) }
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(14.dp)).background(Palette.Surface2)
-                .clickable { editor.updateFx(f.copy(dateStamp = !f.dateStamp)) }.padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("'26 11 20", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Palette.Orange, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Date stamp", style = Type.Title.copy(fontSize = 14.sp))
-                Text("LED imprint of the capture date. Colour and format in Settings.", style = Type.Body.copy(fontSize = 11.sp))
-            }
-            Switch(
-                checked = f.dateStamp, onCheckedChange = { editor.updateFx(f.copy(dateStamp = it)) },
-                colors = SwitchDefaults.colors(checkedTrackColor = Palette.Amber, checkedThumbColor = Palette.Bg),
-            )
-        }
-    }
-}
 
-@Composable
-private fun FrameOption(style: FrameStyle, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.fillMaxWidth().height(70.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Surface2)
-                .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Amber else Color.Transparent, RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(Modifier.size(width = 40.dp, height = 48.dp)) {
-                val photo = Color(0xFF5E7C8C)
-                when (style) {
-                    FrameStyle.NONE -> drawRect(photo, size = size)
-                    FrameStyle.WHITE -> {
-                        drawRect(Color(0xFFF4F2EC), size = size)
-                        val b = size.width * 0.09f
-                        drawRect(photo, Offset(b, b), Size(size.width - 2 * b, size.height - 2 * b))
-                    }
-                    FrameStyle.INSTANT -> {
-                        drawRect(Color(0xFFF4F2EC), size = size)
-                        val b = size.width * 0.09f
-                        drawRect(photo, Offset(b, b), Size(size.width - 2 * b, size.height * 0.68f))
-                    }
-                    FrameStyle.FILM -> {
-                        drawRect(Color(0xFF0C0B0A), size = size)
-                        val r = size.width * 0.22f
-                        drawRect(photo, Offset(r, size.height * 0.06f), Size(size.width - 2 * r, size.height * 0.88f))
-                        var y = size.height * 0.05f
-                        while (y < size.height - 4f) {
-                            drawRect(Color(0xFFE8E4DA), Offset(size.width * 0.05f, y), Size(size.width * 0.09f, size.height * 0.05f))
-                            drawRect(Color(0xFFE8E4DA), Offset(size.width * 0.86f, y), Size(size.width * 0.09f, size.height * 0.05f))
-                            y += size.height * 0.11f
-                        }
-                    }
-                }
-                if (style == FrameStyle.NONE) drawRect(Color.White.copy(alpha = 0.15f), size = size, style = Stroke(1.dp.toPx()))
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(style.label, fontSize = 11.sp, color = if (selected) Palette.Text else Palette.TextDim)
-    }
-}

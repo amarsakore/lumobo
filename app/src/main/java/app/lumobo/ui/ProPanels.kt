@@ -86,10 +86,21 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
-fun ToolHeader(title: String, onReset: (() -> Unit)?, action: String? = null, onAction: () -> Unit = {}) {
+fun ToolHeader(
+    title: String, onReset: (() -> Unit)?, action: String? = null, onAction: () -> Unit = {},
+    secondary: String? = null, onSecondary: () -> Unit = {},
+) {
     Row(Modifier.fillMaxWidth().height(30.dp).padding(start = 18.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title.uppercase(), style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold))
         Spacer(Modifier.weight(1f))
+        if (secondary != null) {
+            Text(
+                secondary, style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold),
+                modifier = Modifier.clip(RoundedCornerShape(50)).border(1.dp, Palette.Line, RoundedCornerShape(50))
+                    .clickable(onClick = onSecondary).padding(horizontal = 12.dp, vertical = 5.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         if (action != null) {
             Text(
                 action, style = Type.Label.copy(color = Palette.Bg, fontWeight = FontWeight.Black),
@@ -128,17 +139,12 @@ fun Histogram(data: FloatArray?, modifier: Modifier = Modifier) {
 private val pct: (Float) -> String = { v -> val i = (v * 100).roundToInt(); if (i > 0) "+$i" else "$i" }
 
 @Composable
-fun LightPanel(editor: EditorController) {
-    DisposableEffect(Unit) {
-        editor.wantHistogram = true
-        onDispose { editor.wantHistogram = false }
-    }
+fun LightPanel(editor: EditorController, onCurves: () -> Unit) {
     val a = editor.adj
     Column(Modifier.fillMaxWidth()) {
         ToolHeader("Light", onReset = {
             editor.updateAdj(a.copy(exposure = 0f, contrast = 0f, highlights = 0f, shadows = 0f, whites = 0f, blacks = 0f, fade = 0f))
-        }, action = "AUTO", onAction = editor::autoTone)
-        Histogram(editor.histogram, Modifier.fillMaxWidth().height(26.dp).padding(horizontal = 18.dp))
+        }, action = "AUTO", onAction = editor::autoTone, secondary = "CURVES", onSecondary = onCurves)
         Column(Modifier.panelScroll().padding(top = 4.dp, bottom = 8.dp)) {
             FilmSlider("Exposure", a.exposure, { editor.updateAdj(editor.adj.copy(exposure = it)) }, format = { String.format(Locale.US, "%+.1f EV", it * 2f) })
             FilmSlider("Contrast", a.contrast, { editor.updateAdj(editor.adj.copy(contrast = it)) })
@@ -258,7 +264,7 @@ fun GradingPanel(editor: EditorController) {
 }
 
 @Composable
-fun CurvesPanel(editor: EditorController) {
+fun CurvesPanel(editor: EditorController, onBack: () -> Unit) {
     DisposableEffect(Unit) {
         editor.wantHistogram = true
         onDispose { editor.wantHistogram = false }
@@ -267,7 +273,10 @@ fun CurvesPanel(editor: EditorController) {
     val curves = editor.adj.curves
     val chColors = listOf(Color.White, Color(0xFFFF5A4E), Color(0xFF5BD46A), Color(0xFF5A8DFF))
     Column(Modifier.fillMaxSize()) {
-        ToolHeader("Curves", onReset = { editor.updateAdj(editor.adj.copy(curves = curves.with(ch, Curves.IDENTITY))) })
+        ToolHeader(
+            "Curves", onReset = { editor.updateAdj(editor.adj.copy(curves = curves.with(ch, Curves.IDENTITY))) },
+            secondary = "‹ LIGHT", onSecondary = onBack,
+        )
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("RGB", "Red", "Green", "Blue").forEachIndexed { i, name -> Chip(name, ch == i, { ch = i }) }
         }
