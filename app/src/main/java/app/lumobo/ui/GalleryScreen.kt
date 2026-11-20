@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.foundation.gestures.scrollBy
 import kotlinx.coroutines.launch
@@ -154,9 +155,9 @@ fun GalleryScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("LUMOBO", style = Type.Wordmark)
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(Palette.Orange))
+                    // Wordmark: the last "O" is the rainbow lens.
+                    Text("LUMOB", style = Type.Wordmark)
+                    RainbowMark(Modifier.padding(start = 5.75.dp).size(17.dp))
                 }
             }
             RoundIconButton(Icons.Outlined.AddPhotoAlternate, "Pick from Google Photos or files", onClick = { pick() }, modifier = Modifier.size(38.dp))
@@ -427,5 +428,20 @@ private fun PermissionCard(onAllow: () -> Unit, onPick: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onPick) { Text("Or pick a single photo", color = Palette.TextDim) }
         }
+    }
+}
+
+/** The app mark: a lens made of rainbow rings (matches the launcher icon). */
+@Composable
+fun RainbowMark(modifier: Modifier = Modifier) {
+    val rings = listOf(Color(0xFFE8463A), Color(0xFFF28C28), Color(0xFFF5C443), Color(0xFF4FA35B), Color(0xFF3C7BC0))
+    val center = if (Palette.dark) Color(0xFF0E0C0A) else Color(0xFF1A1714)
+    androidx.compose.foundation.Canvas(modifier) {
+        val r = size.minDimension / 2f
+        if (Palette.dark) drawCircle(Color(0xFFF2EBDD), r)
+        val step = r / 7.2f
+        rings.forEachIndexed { i, c -> drawCircle(c, r - (if (Palette.dark) step * 0.45f else 0f) - i * step) }
+        drawCircle(center, r * 11f / 36f)
+        drawCircle(Color(0xFFF2EBDD), r * 3f / 36f, center = androidx.compose.ui.geometry.Offset(size.width / 2f - r * 0.18f, size.height / 2f - r * 0.1f))
     }
 }

@@ -53,7 +53,7 @@ class ReadmeAssetsTest {
             Category.VIBES to "window",
             Category.FUJIFILM to "flower", Category.RICOH to "building", Category.KODAK to "flower",
             Category.FUJI_STOCK to "river", Category.CINEMA to "window", Category.INSTANT to "flower",
-            Category.CAMERAS to "building", Category.ILFORD to "building",
+            Category.CAMERAS to "building", Category.ILFORD to "building", Category.IPHONE to "flower",
         )
         for ((cat, name) in subject) {
             val films = listOf(Profiles.ORIGINAL) + Profiles.all.filter { it.category == cat }

@@ -1,21 +1,30 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-dark.svg">
-    <img alt="Lumobo" src="docs/logo/logo-light.svg" width="400">
+    <img alt="Lumobo" src="docs/logo/logo-light.svg" width="420">
   </picture>
 </p>
 
 <p align="center">
-  <b>Film simulations, classic camera looks and lens effects for Android.</b><br>
-  66 looks · 10 lens recipes · grain, halation &amp; bloom · full-resolution export
+  <b>Film simulations, camera looks and a pro photo editor for Android.</b><br>
+  88 looks · pro editing tools · 10 lens recipes · grain, halation &amp; bloom · full-resolution export
 </p>
 
 <p align="center">
-  <a href="https://github.com/amarsakore/lumobo/releases/latest"><img src="https://img.shields.io/github/v/release/amarsakore/lumobo?label=download&color=F5B841&style=flat-square" alt="Download"></a>
+  <a href="https://github.com/amarsakore/lumobo/releases/latest"><img src="https://img.shields.io/github/v/release/amarsakore/lumobo?label=download&color=3C7BC0&style=flat-square" alt="Download"></a>
   <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 10+">
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/OpenGL%20ES-3.0-5586A4?style=flat-square&logo=opengl&logoColor=white" alt="OpenGL ES 3">
+  <img src="https://img.shields.io/badge/size-3%20MB-lightgrey?style=flat-square" alt="3 MB">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square" alt="MIT"></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/editor-films.jpg" width="19%" alt="Picking a film">
+  <img src="docs/screenshots/editor-film-settings.jpg" width="19%" alt="Film strength and frames">
+  <img src="docs/screenshots/editor-light.jpg" width="19%" alt="Light tools">
+  <img src="docs/screenshots/editor-crop.jpg" width="19%" alt="Crop and straighten">
+  <img src="docs/screenshots/editor-lens.jpg" width="19%" alt="Lens recipes">
 </p>
 
 <table>
@@ -40,19 +49,37 @@
 
 ## Features
 
-- **88 looks in 10 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), Fujifilm simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), Ricoh GR image controls, iPhone-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), Kodak and Fuji film stocks, cinema stocks, instant film, Ilford B&amp;W, and camera styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
-- **Film texture on every photo.** Each look gets grain, halation and bloom in its own flavour. Overall strength is set in Settings.
-- **Lens recipes.** Fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval-style swirl. Each recipe can be fine-tuned.
-- **Film and optical effects.** Clumped, luminance-weighted grain with dye-cloud colour, red halation, Pro-Mist bloom, vignette, chromatic aberration and four light-leak styles.
-- **Pro editing tools.** Light (with histogram and Auto), Color, HSL Mixer, Color Grading wheels, point Curves and Detail (Texture, Clarity, Sharpen, Dehaze, HDR, Glow), with edge-aware detail that never draws halos. Save any combination as one of *My Looks*.
-- **Crop and straighten.** Aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), a Lightroom-style straighten dial, vertical and horizontal perspective, flips and 90° rotation. Pinch to zoom into the crop and drag it with two fingers.
-- **Compact editor.** A Lightroom-style bottom bar with a pull-up panel for tools with many sliders, soft haptic ticks on sliders, and one-tap Reset all.
-- **Undo and redo** for every change. A whole slider drag counts as one step.
-- **Re-edit any time.** Every developed photo stores its full recipe: original photo, look, sliders, effects, lens and crop. *Edit Again* picks up exactly where you left off.
-- **Frames and imprints.** Instant border, white border or a 35mm film scan with sprocket holes, plus a seven-segment LED date stamp in your choice of colour and format.
-- **Built-in gallery and viewer.** Browse by month and album, pinch to change the grid size, open photos from Google Photos, keep developed shots in their own tab, and pinch to zoom.
-- **Useful settings.** Film-texture strength, start with your last look, date stamp defaults, default frame, JPEG quality, export size, keep or strip location and camera data, grid size, screenshots filter and haptics.
-- **Fast, private and offline.** About 20–40&nbsp;ms per preview on a modern phone, and the same GPU pipeline renders the full-resolution export. Nothing is uploaded.
+### Looks
+- **88 looks in 10 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), **Fujifilm** simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), **Ricoh GR** image controls, **iPhone**-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), **Kodak** and **Fuji** film stocks, **cinema** stocks, **instant** film, **Ilford** B&amp;W, and **camera** styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
+- **Big, true-to-shape previews.** Every look is previewed on your own photo, in the photo's shape. Picking one shows what it does; tap it again for its **strength**, **frame** and **date stamp**.
+- **Film character.** Choose how much grain, halation and bloom every film starts with: **Off, Subtle, Natural or Dreamy**. Original always stays clean.
+- **My Looks.** Save any mix of film, sliders, effects and lens, then apply it to any photo with one tap.
+
+### Pro editing tools
+- **Light:** exposure, contrast, highlights, shadows, whites, blacks and fade, with a one-tap **Auto** (centre-weighted, keeps the mood of backlit and night shots) and point **Curves** for RGB, red, green and blue.
+- **Color:** temperature, tint, vibrance and saturation; an 8-band **HSL Mixer**; Lightroom-style **Color Grading** wheels for shadows, midtones and highlights.
+- **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Edge-aware, so sharpening and clarity never draw glowing halos.
+- **Effects:** grain (size and colour), halation, bloom, vignette, chromatic aberration and four light-leak styles.
+- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl.
+- **Crop like Lightroom:** aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), straighten dial, vertical and horizontal perspective, flips and 90° rotation. The frame stays put: drag to slide the photo, pinch to zoom it.
+- **Frames and imprints:** instant border, white border or 35mm film scan, plus a seven-segment LED date stamp in your colour and format.
+
+### Made to feel good
+- **Compact editor.** Every tool sits in one scrolling bar. Panels keep one height, show whole controls only, and slide up smoothly to reveal everything, while the photo shrinks to stay in view.
+- **Preview** button to hide the tools and see your photo big, and **hold to compare** with the original.
+- **Undo, redo and Reset all.** A whole slider drag counts as one step; soft haptic ticks on every slider and dial.
+- **Auto-save.** Every change is kept as a draft for that photo, so you can leave and come back. Nothing goes to your gallery until you tap **Save**.
+- **Edit again any time.** Developed photos carry their full recipe, so *Edit Again* picks up exactly where you left off.
+- **Light and dark themes** that follow your phone, and a **Material You** accent that takes your wallpaper's colour.
+
+### Gallery
+- Browse by album, with a **date handle** for fast scrolling and Google Photos-style **pinch** to change the grid.
+- Open photos from **Google Photos**, or send them to Lumobo from any app with **Edit in Lumobo**.
+- Developed shots get their own tab.
+
+### Fast, private and small
+- About 20–40&nbsp;ms per preview on a modern phone, and the same GPU pipeline renders the full-resolution export.
+- Everything happens on your phone. Nothing is uploaded, and the app is about **3 MB**.
 
 ## Before / after
 
@@ -72,9 +99,13 @@
 ## The app
 
 <p align="center">
+  <img src="docs/screenshots/home-header.jpg" width="60%" alt="Lumobo home">
+</p>
+
+<p align="center">
   <img src="docs/screenshots/editor-films.jpg" width="24%" alt="Film picker">
+  <img src="docs/screenshots/editor-light.jpg" width="24%" alt="Light, pulled up">
   <img src="docs/screenshots/editor-lens.jpg" width="24%" alt="Lens recipes">
-  <img src="docs/screenshots/editor-crop.jpg" width="24%" alt="Crop and straighten">
   <img src="docs/screenshots/settings.jpg" width="24%" alt="Settings">
 </p>
 
@@ -160,6 +191,35 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 | **Retro** | `RT` | Faded and warm, like an old print in a shoebox. |
 | **Cross Process** | `XP` | Slide film in negative chemistry. Yellow-green highs, blue shadows. |
 | **Hi-Key** | `HK` | Bright, airy and soft. |
+
+### iPhone-style filters
+
+<img src="docs/examples/grid-iphone.jpg" alt="iPhone-style filters" width="100%">
+
+| Look | Code | Character |
+|---|---|---|
+| **Vivid** | `VIV` | iPhone Photos filter. Punchy, saturated, bright colour. |
+| **Vivid Warm** | `VIVW` | Vivid with a warm, golden lift. |
+| **Vivid Cool** | `VIVC` | Vivid with crisp, cool blues. |
+| **Dramatic** | `DRA` | Deep contrast with restrained colour. |
+| **Dramatic Warm** | `DRAW` | Dramatic, with warm amber shadows and light. |
+| **Dramatic Cool** | `DRAC` | Dramatic, steely blue and moody. |
+| **Mono** | `MONO` | Clean, even black & white. |
+| **Silvertone** | `SLVR` | Bright, silvery B&W with a cool sheen. |
+| **Noir** | `NOIR` | High-contrast B&W with inky shadows. |
+| **Amber** | `AMB` | Photographic Style. A soft amber glow over skin and light. |
+| **Gold** | `GOLD` | Photographic Style. Rich golden warmth. |
+| **Rose Gold** | `ROSE` | Photographic Style. Warm with a gentle rose blush. |
+| **Neutral** | `NEUT` | Photographic Style. Neutralises warmth for true-to-life tones. |
+| **Cool Rose** | `CROS` | Photographic Style. Cool light with a hint of pink. |
+| **Rich Contrast** | `RICH` | Photographic Style. Deeper shadows, richer colour. |
+| **Vibrant** | `VIBR` | Photographic Style. Bright, lively colour. |
+| **Luminous** | `LUMI` | Photographic Style. Bright and airy with open shadows. |
+| **Quiet** | `QUIE` | Photographic Style. Soft, faded, muted calm. |
+| **Cozy** | `COZY` | Photographic Style. Warm, dim and intimate. |
+| **Ethereal** | `ETHR` | Photographic Style. Dreamy pastel softness. |
+| **Muted B&W** | `MBW` | Photographic Style. Gentle, low-contrast monochrome. |
+| **Stark B&W** | `SBW` | Photographic Style. Bold, graphic monochrome. |
 
 ### Kodak
 
@@ -253,7 +313,7 @@ The model is baked into a **64³ 3D LUT**. An OpenGL ES 3 shader ([`Shaders.kt`]
 - **Tilt-shift, soft focus and swirl** blend in a graded, blurred layer. **Fisheye** uses a true tangent projection, and the circular version maps the whole frame into the circle.
 - **Grain** comes from a tileable, gaussian-clumped noise field sized to the frame.
 
-Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive.
+Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive. While you edit, the same recipe is auto-saved as a draft on the phone.
 
 Here is a complete look:
 
@@ -312,13 +372,14 @@ app/
   render/Overlays.kt       LED date stamp and frames
   render/Images.kt         Decoding (EXIF-aware, sRGB) and saving with recipe + metadata
   editor/                  Editor state, undo/redo, recipes, re-edit resolution
+  data/                    Settings, My Looks, auto-saved drafts, gallery thumbnails
   ui/                      Compose screens: gallery, editor, viewer, settings
 docs/                      Logo, examples, screenshots
 ```
 
 ## Disclaimer
 
-Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax and Lomo are trademarks of their respective owners. Lumobo is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
+Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax, Lomo, Apple and iPhone are trademarks of their respective owners. Lumobo is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
 
 ## License
 
