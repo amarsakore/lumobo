@@ -23,7 +23,6 @@ class AppSettings private constructor(context: Context) {
     var bloomLevel by float("bloom_level", 1f)
 
     // ── New edits
-    var rememberLastFilm by bool("remember_last_film", true)
     var lastFilmId by string("last_film", "original")
     var dateStampDefault by bool("date_default", false)
     var dateColor by int("date_color", 0)

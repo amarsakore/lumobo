@@ -80,20 +80,24 @@ fun SettingsScreen(onBack: () -> Unit) {
 
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = bottom + 24.dp)) {
             Section("Film character") {
+                Text(
+                    "How strong each film's grain, halation and bloom start out. 100% is the film's own amount; " +
+                        "you can still fine-tune every photo in Effects. Original is never touched.",
+                    style = Type.Body.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                    modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 4.dp),
+                )
+                val pct: (Float) -> String = { "${(it * 100).roundToInt()}%" }
+                FilmSlider("Grain", s.grainLevel, { s.grainLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
+                FilmSlider("Halation", s.halationLevel, { s.halationLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
+                FilmSlider("Bloom", s.bloomLevel, { s.bloomLevel = it }, min = 0f, max = 2f, default = 1f, format = pct)
                 SwitchRow(
-                    "Film texture on every photo",
-                    "Adds grain, halation and bloom in each film's own flavour, even on Original.",
+                    "Add texture to clean films",
+                    "Films that have no grain of their own (like Provia) get a light, matching dose.",
                     s.characterOn,
                 ) { s.characterOn = it }
-                val pct: (Float) -> String = { "${(it * 100).roundToInt()}%" }
-                FilmSlider("Grain", s.grainLevel, { s.grainLevel = it }, min = 0f, max = 2f, default = 1f, enabled = s.characterOn, format = pct)
-                FilmSlider("Halation", s.halationLevel, { s.halationLevel = it }, min = 0f, max = 2f, default = 1f, enabled = s.characterOn, format = pct)
-                FilmSlider("Bloom", s.bloomLevel, { s.bloomLevel = it }, min = 0f, max = 2f, default = 1f, enabled = s.characterOn, format = pct)
-                Spacer(Modifier.height(8.dp))
             }
 
             Section("New edits") {
-                SwitchRow("Start with your last film", "New photos open with the film you used most recently.", s.rememberLastFilm) { s.rememberLastFilm = it }
                 SwitchRow("Date stamp on every photo", "Turns the LED date imprint on by default.", s.dateStampDefault) { s.dateStampDefault = it }
                 ChoiceRow("Date stamp colour", listOf("Orange", "Red", "Yellow"), s.dateColor, dots = listOf(Palette.Orange, Color(0xFFFF3B2F), Color(0xFFFFC94D))) { s.dateColor = it }
                 ChoiceRow("Date format", listOf("'26 11 20", "11 20 '26", "20 11 '26"), s.dateFormat) { s.dateFormat = it }
@@ -114,7 +118,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             Section("Gallery & app") {
-                ChoiceRow("Grid columns", listOf("3", "4", "5"), (s.gridColumns - 3).coerceIn(0, 2)) { s.gridColumns = it + 3 }
+                ChoiceRow("Grid columns (or pinch the grid)", listOf("2", "3", "4", "5", "6"), (s.gridColumns - 2).coerceIn(0, 4)) { s.gridColumns = it + 2 }
                 SwitchRow("Show screenshots", "Include screenshots in the Library tab.", s.showScreenshots) { s.showScreenshots = it }
                 SwitchRow("Haptic feedback", "Gentle ticks on sliders and controls.", s.haptics) { s.haptics = it }
             }
@@ -127,7 +131,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Lumobo 1.1", style = Type.Title.copy(fontSize = 15.sp))
+                        Text("Lumobo 1.3", style = Type.Title.copy(fontSize = 15.sp))
                         Text("${Profiles.all.size - 1} films and camera looks · source code on GitHub", style = Type.Body.copy(fontSize = 12.sp))
                     }
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = Palette.TextDim, modifier = Modifier.size(18.dp))

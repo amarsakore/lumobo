@@ -5,6 +5,10 @@ import app.lumobo.film.Adjustments
 import app.lumobo.film.Effects
 import app.lumobo.film.FrameStyle
 import app.lumobo.film.Geometry
+import app.lumobo.film.Curves
+import app.lumobo.film.Grade
+import app.lumobo.film.Pt
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -27,6 +31,16 @@ data class Recipe(
             put("i", adj.intensity.toDouble()); put("e", adj.exposure.toDouble()); put("c", adj.contrast.toDouble())
             put("h", adj.highlights.toDouble()); put("s", adj.shadows.toDouble()); put("t", adj.temp.toDouble())
             put("n", adj.tint.toDouble()); put("sat", adj.saturation.toDouble()); put("f", adj.fade.toDouble())
+            put("wh", adj.whites.toDouble()); put("bk", adj.blacks.toDouble()); put("vi", adj.vibrance.toDouble())
+            put("tx", adj.texture.toDouble()); put("cl", adj.clarity.toDouble()); put("dz", adj.dehaze.toDouble())
+            put("sh", adj.sharpen.toDouble()); put("hdr", adj.hdr.toDouble()); put("gl", adj.glow.toDouble())
+            if (adj.mixerActive) put("mx", JSONArray(adj.mixer.map { it.toDouble() }))
+            if (!adj.grade.isIdentity) put("gr", adj.grade.let { gr ->
+                JSONArray(listOf(gr.shadowHue, gr.shadowSat, gr.midHue, gr.midSat, gr.highHue, gr.highSat, gr.balance, gr.blending).map { it.toDouble() })
+            })
+            if (!adj.curves.isIdentity) put("cv", JSONArray((0..3).map { ch ->
+                JSONArray(adj.curves.channel(ch).flatMap { listOf(it.x.toDouble(), it.y.toDouble()) })
+            }))
         })
         put("fx", JSONObject().apply {
             put("g", fx.grain.toDouble()); put("gs", fx.grainSize.toDouble()); put("cg", fx.colorGrain.toDouble())
@@ -42,6 +56,7 @@ data class Recipe(
             put("r", geo.rotation); put("l", geo.left.toDouble()); put("t", geo.top.toDouble())
             put("ri", geo.right.toDouble()); put("b", geo.bottom.toDouble()); put("a", geo.aspect)
             put("an", geo.angle.toDouble()); put("fh", geo.flipH); put("fv", geo.flipV)
+            put("pv", geo.perspV.toDouble()); put("ph", geo.perspH.toDouble())
         })
     }.toString()
 
@@ -67,6 +82,23 @@ data class Recipe(
                         intensity = a.f("i", 1f), exposure = a.f("e", 0f), contrast = a.f("c", 0f),
                         highlights = a.f("h", 0f), shadows = a.f("s", 0f), temp = a.f("t", 0f),
                         tint = a.f("n", 0f), saturation = a.f("sat", 0f), fade = a.f("f", 0f),
+                        whites = a.f("wh", 0f), blacks = a.f("bk", 0f), vibrance = a.f("vi", 0f),
+                        texture = a.f("tx", 0f), clarity = a.f("cl", 0f), dehaze = a.f("dz", 0f),
+                        sharpen = a.f("sh", 0f), hdr = a.f("hdr", 0f), glow = a.f("gl", 0f),
+                        mixer = a.optJSONArray("mx")?.let { arr -> List(24) { arr.optDouble(it, 0.0).toFloat() } } ?: Adjustments.MIXER_ZERO,
+                        grade = a.optJSONArray("gr")?.let { arr ->
+                            fun v(i: Int, d: Float) = arr.optDouble(i, d.toDouble()).toFloat()
+                            Grade(v(0, 220f), v(1, 0f), v(2, 40f), v(3, 0f), v(4, 45f), v(5, 0f), v(6, 0f), v(7, 0.5f))
+                        } ?: Grade(),
+                        curves = a.optJSONArray("cv")?.let { arr ->
+                            var c = Curves()
+                            for (ch in 0 until minOf(4, arr.length())) {
+                                val pts = arr.getJSONArray(ch)
+                                val list = (0 until pts.length() / 2).map { Pt(pts.getDouble(it * 2).toFloat(), pts.getDouble(it * 2 + 1).toFloat()) }
+                                if (list.size >= 2) c = c.with(ch, list)
+                            }
+                            c
+                        } ?: Curves(),
                     ),
                     fx = Effects(
                         grain = x.f("g", 0f), grainSize = x.f("gs", 0.35f), colorGrain = x.f("cg", 0.35f),
@@ -83,6 +115,7 @@ data class Recipe(
                         rotation = g.optInt("r", 0), left = g.f("l", 0f), top = g.f("t", 0f),
                         right = g.f("ri", 1f), bottom = g.f("b", 1f), aspect = g.optString("a", "original"),
                         angle = g.f("an", 0f), flipH = g.optBoolean("fh", false), flipV = g.optBoolean("fv", false),
+                        perspV = g.f("pv", 0f), perspH = g.f("ph", 0f),
                     ),
                 )
             }.getOrNull()

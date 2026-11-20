@@ -36,3 +36,31 @@ class AccuracyTest {
         println("baked ${Profiles.all.size} LUTs (33^3) in ${(System.nanoTime() - t0) / 1_000_000}ms")
     }
 }
+
+class GeometryAndCurvesTest {
+    @Test
+    fun curvesAreMonotoneAndIdentityByDefault() {
+        val c = Curves()
+        val baked = c.bake(256)
+        for (i in 0 until 256) assertTrue(abs(baked[i * 4] - i / 255f) < 1e-4f)
+        val s = listOf(Pt(0f, 0f), Pt(0.25f, 0.15f), Pt(0.75f, 0.9f), Pt(1f, 1f))
+        var prev = -1f
+        for (i in 0..1000) {
+            val y = Curves.sample(s, i / 1000f)
+            assertTrue("monotone", y >= prev - 1e-6f)
+            prev = y
+        }
+    }
+
+    @Test
+    fun fillScaleCoversFrame() {
+        assertTrue(Geometry().fillScale(0.75f) == 1f)
+        val g = Geometry(angle = 10f, perspV = 0.6f, perspH = -0.3f)
+        val z = g.fillScale(0.75f)
+        assertTrue(z > 1f && z < 4f)
+        val straight = Geometry(angle = 10f).fillScale(0.75f)
+        val th = Math.toRadians(10.0)
+        val analytic = (kotlin.math.cos(th) + (1 / 0.75) * kotlin.math.sin(th)).toFloat()
+        assertTrue("got $straight want $analytic", abs(straight - analytic) < 1e-3f)
+    }
+}

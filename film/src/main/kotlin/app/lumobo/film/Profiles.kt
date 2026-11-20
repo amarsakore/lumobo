@@ -4,6 +4,7 @@ enum class Category(val label: String) {
     VIBES("Vibes"),
     FUJIFILM("Fujifilm"),
     RICOH("Ricoh GR"),
+    IPHONE("iPhone"),
     KODAK("Kodak"),
     FUJI_STOCK("Fuji Film"),
     CINEMA("Cinema"),
@@ -66,6 +67,7 @@ enum class LensPreset(val label: String, val blurb: String) {
     ;
 
     fun applyTo(fx: Effects): Effects {
+        // Reset only the lens recipe.
         val base = fx.withLensOf(Effects()).copy(lens = ordinal)
         return when (this) {
             NONE -> base.copy(lens = 0)
@@ -101,12 +103,51 @@ data class Geometry(
     val angle: Float = 0f,
     val flipH: Boolean = false,
     val flipV: Boolean = false,
+    val perspV: Float = 0f,
+    val perspH: Float = 0f,
 ) {
-    val isIdentity get() = rotation == 0 && left == 0f && top == 0f && right == 1f && bottom == 1f && angle == 0f && !flipH && !flipV
+    val isIdentity get() = rotation == 0 && left == 0f && top == 0f && right == 1f && bottom == 1f &&
+        angle == 0f && !flipH && !flipV && perspV == 0f && perspH == 0f
     val width get() = right - left
     val height get() = bottom - top
-    /** Same orientation, straighten and flips, uncropped. */
-    fun uncropped() = Geometry(rotation = rotation, angle = angle, flipH = flipH, flipV = flipV)
+    /** Same orientation, straighten, perspective and flips, uncropped. */
+    fun uncropped() = Geometry(rotation = rotation, angle = angle, flipH = flipH, flipV = flipV, perspV = perspV, perspH = perspH)
+
+    /** Keystone coefficients in centred, height-normalised display coordinates. */
+    fun keystone(dispAspect: Float): Pair<Float, Float> = (perspH * 0.7f / dispAspect) to (-perspV * 0.7f)
+
+    /**
+     * Zoom needed so straighten + perspective never reveal empty corners. Shared by the GPU
+     * renderer (which maps display -> source with exactly this transform) and the crop UI.
+     */
+    fun fillScale(dispAspect: Float): Float {
+        if (angle == 0f && perspV == 0f && perspH == 0f) return 1f
+        val th = Math.toRadians(angle.toDouble())
+        val c = kotlin.math.cos(th).toFloat()
+        val s = kotlin.math.sin(th).toFloat()
+        val (kh, kv) = keystone(dispAspect)
+        val hx = dispAspect / 2f
+        fun inside(z: Float): Boolean {
+            for (sx in floatArrayOf(-1f, 1f)) for (sy in floatArrayOf(-1f, 1f)) {
+                val px = sx * hx / z
+                val py = sy * 0.5f / z
+                val rx = c * px - s * py
+                val ry = s * px + c * py
+                val w = 1f + kh * rx + kv * ry
+                if (w <= 0.05f) return false
+                if (kotlin.math.abs(rx / w) > hx + 1e-4f || kotlin.math.abs(ry / w) > 0.5f + 1e-4f) return false
+            }
+            return true
+        }
+        var lo = 1f
+        var hi = 8f
+        if (inside(lo)) return 1f
+        repeat(28) {
+            val mid = (lo + hi) / 2f
+            if (inside(mid)) hi = mid else lo = mid
+        }
+        return hi
+    }
 }
 
 /** Strength of the film texture added to every look (1 = each film's own flavour). */
@@ -116,6 +157,7 @@ object Character {
     /** The grain / halation / bloom that suits each family of looks. */
     private fun flavour(p: FilmProfile): Effects = when (p.category) {
         Category.VIBES -> Effects(grain = 0.24f, grainSize = 0.40f, halation = 0.20f, bloom = 0.16f)
+        Category.IPHONE -> Effects(grain = 0f, grainSize = 0.2f, halation = 0.04f, bloom = 0.05f)
         Category.FUJIFILM -> Effects(grain = 0.18f, grainSize = 0.28f, halation = 0.14f, bloom = 0.10f)
         Category.RICOH -> Effects(grain = 0.22f, grainSize = 0.32f, halation = 0.12f, bloom = 0.08f)
         Category.KODAK, Category.FUJI_STOCK -> Effects(grain = 0.26f, grainSize = 0.40f, halation = 0.22f, bloom = 0.10f)
@@ -131,10 +173,20 @@ object Character {
      * when [enabled]; [levels] scale the result (0 = none, 1 = default, 2 = double).
      */
     fun effects(p: FilmProfile, enabled: Boolean, levels: CharacterLevels): Effects {
-        if (!enabled) return p.fx
+        // Original stays untouched: film texture and lighting belong to films.
+        if (p.isIdentity) return p.fx
+        return texture(p, p.fx, enabled, levels)
+    }
+
+    private fun texture(p: FilmProfile, base: Effects, enabled: Boolean, levels: CharacterLevels): Effects {
+        if (!enabled) return base.copy(
+            grain = (p.fx.grain * levels.grain).coerceIn(0f, 1f),
+            halation = (p.fx.halation * levels.halation).coerceIn(0f, 1f),
+            bloom = (p.fx.bloom * levels.bloom).coerceIn(0f, 1f),
+        )
         val f = flavour(p)
         val ownGrain = p.fx.grain > 0f
-        return p.fx.copy(
+        return base.copy(
             grain = (maxOf(p.fx.grain, f.grain) * levels.grain).coerceIn(0f, 1f),
             grainSize = if (ownGrain) p.fx.grainSize else f.grainSize,
             halation = (maxOf(p.fx.halation, f.halation) * levels.halation).coerceIn(0f, 1f),
@@ -295,6 +347,119 @@ object Profiles {
             "Hard-boiled black & white with glowing highlights.",
             Look(mono = Mono(0.35f, 0.50f, 0.15f), curve = Curve(contrast = 1.45f, shadows = -0.30f, highlights = 0.15f, blacks = -0.2f)),
             Effects(grain = 0.45f, grainSize = 0.55f, halation = 0.20f, bloom = 0.22f, vignette = 0.40f),
+        ),
+
+        // ───────────────────────────── iPhone filters & Photographic Styles ─────────────────────────────
+        FilmProfile(
+            "ip_vivid", "Vivid", "VIV", Category.IPHONE,
+            "iPhone Photos filter. Punchy, saturated, bright colour.",
+            Look(curve = Curve(contrast = 1.10f, shadows = -0.04f, highlights = 0.04f), saturation = 1.22f, vibrance = 0.12f),
+        ),
+        FilmProfile(
+            "ip_vivid_warm", "Vivid Warm", "VIVW", Category.IPHONE,
+            "Vivid with a warm, golden lift.",
+            Look(temp = 0.12f, curve = Curve(contrast = 1.10f, shadows = -0.04f, highlights = 0.04f), saturation = 1.20f, vibrance = 0.10f, highlightTone = Tone(75f, 0.015f)),
+        ),
+        FilmProfile(
+            "ip_vivid_cool", "Vivid Cool", "VIVC", Category.IPHONE,
+            "Vivid with crisp, cool blues.",
+            Look(temp = -0.12f, curve = Curve(contrast = 1.10f, shadows = -0.04f, highlights = 0.04f), saturation = 1.18f, vibrance = 0.10f, shadowTone = Tone(240f, 0.010f)),
+        ),
+        FilmProfile(
+            "ip_dramatic", "Dramatic", "DRA", Category.IPHONE,
+            "Deep contrast with restrained colour.",
+            Look(curve = Curve(contrast = 1.26f, shadows = -0.22f, highlights = -0.10f, blacks = -0.1f), saturation = 0.86f),
+        ),
+        FilmProfile(
+            "ip_dramatic_warm", "Dramatic Warm", "DRAW", Category.IPHONE,
+            "Dramatic, with warm amber shadows and light.",
+            Look(temp = 0.14f, curve = Curve(contrast = 1.26f, shadows = -0.22f, highlights = -0.10f), saturation = 0.92f, midTone = Tone(65f, 0.012f)),
+        ),
+        FilmProfile(
+            "ip_dramatic_cool", "Dramatic Cool", "DRAC", Category.IPHONE,
+            "Dramatic, steely blue and moody.",
+            Look(temp = -0.16f, curve = Curve(contrast = 1.26f, shadows = -0.22f, highlights = -0.10f), saturation = 0.82f, shadowTone = Tone(230f, 0.02f)),
+        ),
+        FilmProfile(
+            "ip_mono", "Mono", "MONO", Category.IPHONE,
+            "Clean, even black & white.",
+            Look(mono = Mono(0.2126f, 0.7152f, 0.0722f), curve = Curve(contrast = 1.04f)),
+        ),
+        FilmProfile(
+            "ip_silvertone", "Silvertone", "SLVR", Category.IPHONE,
+            "Bright, silvery B&W with a cool sheen.",
+            Look(mono = Mono(0.25f, 0.65f, 0.10f), curve = Curve(contrast = 1.12f, highlights = 0.10f, shadows = 0.04f), highlightTone = Tone(230f, 0.008f), shadowTone = Tone(240f, 0.010f)),
+        ),
+        FilmProfile(
+            "ip_noir", "Noir", "NOIR", Category.IPHONE,
+            "High-contrast B&W with inky shadows.",
+            Look(mono = Mono(0.30f, 0.59f, 0.11f), curve = Curve(contrast = 1.50f, shadows = -0.35f, highlights = 0.18f, blacks = -0.2f)),
+        ),
+        FilmProfile(
+            "ip_amber", "Amber", "AMB", Category.IPHONE,
+            "Photographic Style. A soft amber glow over skin and light.",
+            Look(temp = 0.10f, curve = Curve(contrast = 1.02f, shadows = 0.02f), saturation = 1.0f, midTone = Tone(70f, 0.018f), highlightTone = Tone(75f, 0.02f)),
+        ),
+        FilmProfile(
+            "ip_gold", "Gold", "GOLD", Category.IPHONE,
+            "Photographic Style. Rich golden warmth.",
+            Look(temp = 0.16f, tint = 0.02f, curve = Curve(contrast = 1.05f), saturation = 1.04f, highlightTone = Tone(85f, 0.025f), midTone = Tone(80f, 0.012f)),
+        ),
+        FilmProfile(
+            "ip_rose_gold", "Rose Gold", "ROSE", Category.IPHONE,
+            "Photographic Style. Warm with a gentle rose blush.",
+            Look(temp = 0.08f, tint = 0.07f, curve = Curve(contrast = 1.02f, shadows = 0.03f), saturation = 0.98f, highlightTone = Tone(20f, 0.02f)),
+        ),
+        FilmProfile(
+            "ip_neutral", "Neutral", "NEUT", Category.IPHONE,
+            "Photographic Style. Neutralises warmth for true-to-life tones.",
+            Look(temp = -0.06f, curve = Curve(contrast = 0.98f, highlights = -0.04f), saturation = 0.96f),
+        ),
+        FilmProfile(
+            "ip_cool_rose", "Cool Rose", "CROS", Category.IPHONE,
+            "Photographic Style. Cool light with a hint of pink.",
+            Look(temp = -0.10f, tint = 0.06f, curve = Curve(contrast = 1.02f), saturation = 0.98f, highlightTone = Tone(340f, 0.012f)),
+        ),
+        FilmProfile(
+            "ip_rich", "Rich Contrast", "RICH", Category.IPHONE,
+            "Photographic Style. Deeper shadows, richer colour.",
+            Look(curve = Curve(contrast = 1.18f, shadows = -0.16f, highlights = 0.02f), saturation = 1.10f),
+        ),
+        FilmProfile(
+            "ip_vibrant", "Vibrant", "VIBR", Category.IPHONE,
+            "Photographic Style. Bright, lively colour.",
+            Look(exposure = 0.08f, curve = Curve(contrast = 1.06f, highlights = 0.04f), saturation = 1.16f, vibrance = 0.15f),
+        ),
+        FilmProfile(
+            "ip_luminous", "Luminous", "LUMI", Category.IPHONE,
+            "Photographic Style. Bright and airy with open shadows.",
+            Look(exposure = 0.18f, curve = Curve(contrast = 0.94f, shadows = 0.14f, highlights = -0.04f), saturation = 1.02f),
+        ),
+        FilmProfile(
+            "ip_quiet", "Quiet", "QUIE", Category.IPHONE,
+            "Photographic Style. Soft, faded, muted calm.",
+            Look(curve = Curve(contrast = 0.86f, shadows = 0.10f, highlights = -0.08f), rgbCurveMix = 0.5f, saturation = 0.78f, black = Rgb.gray(0.05f)),
+        ),
+        FilmProfile(
+            "ip_cozy", "Cozy", "COZY", Category.IPHONE,
+            "Photographic Style. Warm, dim and intimate.",
+            Look(exposure = -0.08f, temp = 0.12f, curve = Curve(contrast = 1.10f, shadows = -0.12f, highlights = -0.08f), saturation = 0.96f, midTone = Tone(60f, 0.012f)),
+        ),
+        FilmProfile(
+            "ip_ethereal", "Ethereal", "ETHR", Category.IPHONE,
+            "Photographic Style. Dreamy pastel softness.",
+            Look(exposure = 0.10f, tint = 0.03f, curve = Curve(contrast = 0.84f, shadows = 0.12f, highlights = -0.06f), rgbCurveMix = 0.4f, saturation = 0.82f, highlightTone = Tone(330f, 0.012f), shadowTone = Tone(230f, 0.012f), black = Rgb(0.05f, 0.05f, 0.07f)),
+            Effects(bloom = 0.12f),
+        ),
+        FilmProfile(
+            "ip_muted_bw", "Muted B&W", "MBW", Category.IPHONE,
+            "Photographic Style. Gentle, low-contrast monochrome.",
+            Look(mono = Mono(0.2126f, 0.7152f, 0.0722f), curve = Curve(contrast = 0.86f, shadows = 0.10f, highlights = -0.08f), black = Rgb.gray(0.06f)),
+        ),
+        FilmProfile(
+            "ip_stark_bw", "Stark B&W", "SBW", Category.IPHONE,
+            "Photographic Style. Bold, graphic monochrome.",
+            Look(mono = Mono(0.30f, 0.59f, 0.11f), curve = Curve(contrast = 1.40f, shadows = -0.25f, highlights = 0.12f)),
         ),
 
         // ───────────────────────────── Fujifilm camera simulations ─────────────────────────────

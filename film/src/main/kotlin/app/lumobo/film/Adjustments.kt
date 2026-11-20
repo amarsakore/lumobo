@@ -8,18 +8,125 @@ import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
+/** A point on a tone curve, both axes 0..1. */
+data class Pt(val x: Float, val y: Float)
+
+/** Point curves (Lightroom / Snapseed style). Master applies first, then each channel. */
+data class Curves(
+    val master: List<Pt> = IDENTITY,
+    val red: List<Pt> = IDENTITY,
+    val green: List<Pt> = IDENTITY,
+    val blue: List<Pt> = IDENTITY,
+) {
+    val isIdentity get() = master == IDENTITY && red == IDENTITY && green == IDENTITY && blue == IDENTITY
+
+    fun channel(i: Int): List<Pt> = when (i) { 0 -> master; 1 -> red; 2 -> green; else -> blue }
+    fun with(i: Int, pts: List<Pt>): Curves = when (i) { 0 -> copy(master = pts); 1 -> copy(red = pts); 2 -> copy(green = pts); else -> copy(blue = pts) }
+
+    /** [n] RGBA samples (interleaved), r = R(M(x)) etc. */
+    fun bake(n: Int = 256): FloatArray {
+        val out = FloatArray(n * 4)
+        for (i in 0 until n) {
+            val x = i / (n - 1f)
+            val m = sample(master, x)
+            out[i * 4] = sample(red, m)
+            out[i * 4 + 1] = sample(green, m)
+            out[i * 4 + 2] = sample(blue, m)
+            out[i * 4 + 3] = 1f
+        }
+        return out
+    }
+
+    companion object {
+        val IDENTITY = listOf(Pt(0f, 0f), Pt(1f, 1f))
+
+        /** Monotone cubic (Fritsch–Carlson) through the points: smooth, never overshoots. */
+        fun sample(pts: List<Pt>, x: Float): Float {
+            if (pts.size < 2) return x
+            if (x <= pts.first().x) return pts.first().y.coerceIn(0f, 1f)
+            if (x >= pts.last().x) return pts.last().y.coerceIn(0f, 1f)
+            val n = pts.size
+            val d = FloatArray(n - 1) { (pts[it + 1].y - pts[it].y) / maxOf(1e-6f, pts[it + 1].x - pts[it].x) }
+            val m = FloatArray(n)
+            m[0] = d[0]; m[n - 1] = d[n - 2]
+            for (i in 1 until n - 1) m[i] = if (d[i - 1] * d[i] <= 0f) 0f else (d[i - 1] + d[i]) / 2f
+            for (i in 0 until n - 1) {
+                if (d[i] == 0f) { m[i] = 0f; m[i + 1] = 0f; continue }
+                val a = m[i] / d[i]
+                val b = m[i + 1] / d[i]
+                val h = a * a + b * b
+                if (h > 9f) {
+                    val t = 3f / kotlin.math.sqrt(h)
+                    m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]
+                }
+            }
+            var k = 0
+            while (k < n - 2 && x > pts[k + 1].x) k++
+            val x0 = pts[k].x; val x1 = pts[k + 1].x
+            val h = x1 - x0
+            val t = (x - x0) / h
+            val t2 = t * t; val t3 = t2 * t
+            val y = (2 * t3 - 3 * t2 + 1) * pts[k].y + (t3 - 2 * t2 + t) * h * m[k] +
+                (-2 * t3 + 3 * t2) * pts[k + 1].y + (t3 - t2) * h * m[k + 1]
+            return y.coerceIn(0f, 1f)
+        }
+    }
+}
+
+/** Split-tone colour grading. Hues in degrees (0..360, HSV wheel), saturations 0..1. */
+data class Grade(
+    val shadowHue: Float = 220f,
+    val shadowSat: Float = 0f,
+    val midHue: Float = 40f,
+    val midSat: Float = 0f,
+    val highHue: Float = 45f,
+    val highSat: Float = 0f,
+    val balance: Float = 0f,
+    val blending: Float = 0.5f,
+) {
+    val isIdentity get() = shadowSat == 0f && midSat == 0f && highSat == 0f
+}
+
 /** User adjustments layered on top of a film profile. Bipolar values are -1..1, others 0..1. */
 data class Adjustments(
     val intensity: Float = 1f,
+    // Light
     val exposure: Float = 0f,
     val contrast: Float = 0f,
     val highlights: Float = 0f,
     val shadows: Float = 0f,
+    val whites: Float = 0f,
+    val blacks: Float = 0f,
+    // Colour
     val temp: Float = 0f,
     val tint: Float = 0f,
+    val vibrance: Float = 0f,
     val saturation: Float = 0f,
     val fade: Float = 0f,
-)
+    // Detail & local
+    val texture: Float = 0f,
+    val clarity: Float = 0f,
+    val dehaze: Float = 0f,
+    val sharpen: Float = 0f,
+    val hdr: Float = 0f,
+    val glow: Float = 0f,
+    // Colour mixer: 8 bands x (hue, saturation, luminance), each -1..1
+    val mixer: List<Float> = MIXER_ZERO,
+    val grade: Grade = Grade(),
+    val curves: Curves = Curves(),
+) {
+    val mixerActive get() = mixer.any { it != 0f }
+
+    fun mixerValue(band: Int, kind: Int) = mixer[band * 3 + kind]
+    fun withMixer(band: Int, kind: Int, v: Float) = copy(mixer = mixer.toMutableList().also { it[band * 3 + kind] = v })
+
+    companion object {
+        val MIXER_ZERO: List<Float> = List(24) { 0f }
+        val MIXER_NAMES = listOf("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")
+        /** OKLCh hue centre of each mixer band (degrees). */
+        val MIXER_HUES = floatArrayOf(29f, 58f, 108f, 142f, 195f, 264f, 296f, 333f)
+    }
+}
 
 /** Thread-safe, size-bounded cache of baked LUTs keyed by profile id. */
 class LutCache(private val size: Int = 64, private val capacity: Int = 10) {

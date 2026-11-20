@@ -27,6 +27,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -65,6 +70,62 @@ import kotlin.math.roundToInt
  * Thin, precise slider in the style of a camera menu. Double-tap to reset.
  * Bipolar sliders (default inside the range) fill from the centre.
  */
+/** Light, soothing haptics: a soft tick per slider step, a firmer detent at defaults. */
+class SoftHaptics(private val view: android.view.View, private val enabled: () -> Boolean) {
+    fun tick() {
+        if (!enabled()) return
+        view.performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+            else android.view.HapticFeedbackConstants.CLOCK_TICK,
+        )
+    }
+    fun detent() {
+        if (!enabled()) return
+        view.performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.SEGMENT_TICK
+            else android.view.HapticFeedbackConstants.KEYBOARD_TAP,
+        )
+    }
+    fun confirm() {
+        if (!enabled()) return
+        view.performHapticFeedback(
+            if (android.os.Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.CONFIRM
+            else android.view.HapticFeedbackConstants.LONG_PRESS,
+        )
+    }
+}
+
+@Composable
+fun rememberSoftHaptics(): SoftHaptics {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val settings = remember { app.lumobo.data.AppSettings.get(ctx) }
+    return remember(view) { SoftHaptics(view) { settings.haptics } }
+}
+
+/** Editor tool panel: [overflow] when its controls don't fit, [expanded] when pulled up. */
+@Stable
+class PanelSheet {
+    var expanded by mutableStateOf(false)
+    var overflow by mutableStateOf(false)
+    val open get() = expanded && overflow
+}
+
+val LocalPanelSheet = staticCompositionLocalOf { PanelSheet() }
+
+/** Vertical scroll for a tool panel's controls; tells the sheet whether they overflow. */
+@Composable
+fun Modifier.panelScroll(): Modifier {
+    val st = rememberScrollState()
+    val sheet = LocalPanelSheet.current
+    val max = st.maxValue
+    LaunchedEffect(max, sheet.open) {
+        if (max != Int.MAX_VALUE && !sheet.open) sheet.overflow = max > 0
+    }
+    DisposableEffect(sheet) { onDispose { sheet.overflow = false } }
+    return this.verticalScroll(st)
+}
+
 @Composable
 fun FilmSlider(
     label: String,
@@ -77,36 +138,45 @@ fun FilmSlider(
     enabled: Boolean = true,
     format: (Float) -> String = { v -> val i = (v * 100).roundToInt(); if (min < 0f && i > 0) "+$i" else "$i" },
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberSoftHaptics()
+    val lastStep = remember { intArrayOf(Int.MIN_VALUE) }
+    // Gesture handlers live across recompositions, so read the *latest* parameters through
+    // updated state. Capturing them directly made drags apply stale settings (the "shift" bug).
     val current by rememberUpdatedState(value)
+    val change by rememberUpdatedState(onChange)
+    val lo by rememberUpdatedState(min)
+    val hi by rememberUpdatedState(max)
+    val def by rememberUpdatedState(default)
     val changed = abs(value - default) > 0.005f
     val valueColor by animateColorAsState(if (changed) Palette.Amber else Palette.TextFaint, label = "v")
     val alpha = if (enabled) 1f else 0.35f
-    Column(modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp).graphicsLayer { this.alpha = alpha }) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 18.dp).graphicsLayer { this.alpha = alpha }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label.uppercase(), style = Type.Label)
             Spacer(Modifier.weight(1f))
             Text(format(value), style = Type.Mono.copy(color = valueColor))
         }
         var widthPx by remember { mutableFloatStateOf(1f) }
-        fun valueAt(x: Float) = (min + (x / widthPx).coerceIn(0f, 1f) * (max - min))
+        fun valueAt(x: Float) = (lo + (x / widthPx).coerceIn(0f, 1f) * (hi - lo))
         fun emit(v: Float) {
             var nv = v
             // Gentle detent at the default value.
-            if (abs(nv - default) < (max - min) * 0.015f) nv = default
-            if ((current - default) * (nv - default) < 0f || (nv == default && current != default)) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            }
-            onChange(nv)
+            if (abs(nv - def) < (hi - lo) * 0.015f) nv = def
+            if (nv == current) return
+            val step = ((nv - lo) / (hi - lo) * 40f).toInt()
+            if ((current - def) * (nv - def) < 0f || (nv == def && current != def)) haptics.detent()
+            else if (step != lastStep[0]) haptics.tick()
+            lastStep[0] = step
+            change(nv)
         }
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(30.dp)
+                .height(24.dp)
                 .pointerInput(enabled) {
                     if (!enabled) return@pointerInput
                     detectTapGestures(
-                        onDoubleTap = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onChange(default) },
+                        onDoubleTap = { haptics.confirm(); change(def) },
                         onTap = { emit(valueAt(it.x)) },
                     )
                 }
@@ -136,9 +206,9 @@ fun FilmSlider(
             if (default > min && default < max && !(min < 0f && default == 0f)) {
                 // Mark the film's own default so it is easy to return to.
                 val xd = xOf(default)
-                drawCircle(Palette.TextFaint, radius = 2.5.dp.toPx(), center = Offset(xd, cy + 9.dp.toPx()))
+                drawCircle(Palette.TextFaint, radius = 2.5.dp.toPx(), center = Offset(xd, cy + 8.dp.toPx()))
             }
-            drawCircle(Color.White, radius = 7.dp.toPx(), center = Offset(x1, cy))
+            drawCircle(Color.White, radius = 6.5.dp.toPx(), center = Offset(x1, cy))
             if (changed) drawCircle(Palette.Amber, radius = 3.dp.toPx(), center = Offset(x1, cy))
         }
     }
@@ -154,6 +224,7 @@ fun ZoomableImage(
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    val hold by rememberUpdatedState(onHold)
     LaunchedEffect(resetKey) { scale = 1f; offset = Offset.Zero }
     val animScale by animateFloatAsState(scale, label = "zoom")
     BoxWithConstraints(
@@ -183,10 +254,10 @@ fun ZoomableImage(
                             }
                         },
                         onPress = {
-                            val job = launch { delay(160); onHold(true) }
+                            val job = launch { delay(160); hold(true) }
                             tryAwaitRelease()
                             job.cancel()
-                            onHold(false)
+                            hold(false)
                         },
                     )
                 }
@@ -217,9 +288,9 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifie
             .background(bg)
             .border(1.dp, if (selected) Color.Transparent else Palette.Line, RoundedCornerShape(50))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp),
+            .padding(horizontal = 11.dp, vertical = 4.dp),
     ) {
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = fg)
+        Text(text, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = fg)
     }
 }
 
@@ -264,17 +335,15 @@ fun RoundIconButton(icon: ImageVector, description: String, onClick: () -> Unit,
 
 @Composable
 fun BottomTab(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val tint by animateColorAsState(if (selected) Palette.Amber else Palette.TextFaint, label = "tab")
+    val tint by animateColorAsState(if (selected) Palette.Amber else Palette.TextDim, label = "tab")
     Column(
         modifier
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(vertical = 8.dp),
+            .padding(top = 6.dp, bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(4.dp))
-        Text(label.uppercase(), style = Type.Label.copy(fontSize = 10.sp, color = tint), textAlign = TextAlign.Center)
-        Spacer(Modifier.height(4.dp))
-        Box(Modifier.width(14.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(if (selected) Palette.Amber else Color.Transparent))
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 10.5.sp, color = tint, maxLines = 1, textAlign = TextAlign.Center)
     }
 }

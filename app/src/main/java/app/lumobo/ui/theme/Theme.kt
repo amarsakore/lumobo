@@ -5,7 +5,10 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -50,6 +53,9 @@ fun LumoboTheme(content: @Composable () -> Unit) {
             error = Palette.Red,
         ),
         typography = Typography(),
-        content = content,
-    )
+    ) {
+        // Compact type: every text in the app renders ~10% smaller, on top of the system font size.
+        val d = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(d.density, d.fontScale * 0.9f), content = content)
+    }
 }

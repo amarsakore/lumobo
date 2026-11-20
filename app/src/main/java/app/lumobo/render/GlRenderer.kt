@@ -10,6 +10,8 @@ import android.opengl.GLES30
 import android.opengl.GLUtils
 import android.util.Log
 import app.lumobo.film.Adjustments
+import app.lumobo.film.ColorMath
+import app.lumobo.film.Curves
 import app.lumobo.film.Effects
 import app.lumobo.film.Geometry
 import app.lumobo.film.GrainField
@@ -23,6 +25,7 @@ import java.nio.FloatBuffer
 import java.util.concurrent.Executors
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.log2
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -55,7 +58,7 @@ class GlRenderer {
 
     private var fxW = 0
     private var fxH = 0
-    // 0 halA, 1 halB, 2 bloomA, 3 bloomB, 4 lensBlurA, 5 lensBlurB, 6 starSrc, 7 starAcc
+    // 0/1 halation, 2/3 bloom, 4/5 local blur, 6 star source, 7 star rays, 8/9 wide blur, 10/11 haze
     private val fxTex = IntArray(FX_COUNT)
     private val fxFbo = IntArray(FX_COUNT)
     private var fxFloat = true
@@ -70,6 +73,11 @@ class GlRenderer {
         private set
 
     private val uniformCache = HashMap<Int, HashMap<String, Int>>()
+    private var curveTex = 0
+    private var curveKey: Curves? = null
+
+    /** Create the context, compile shaders and build the grain field ahead of first use. */
+    suspend fun prewarm() = onGl { }
 
     suspend fun <T> onGl(block: GlRenderer.() -> T): T = withContext(dispatcher) {
         ensureInit()
@@ -302,15 +310,21 @@ class GlRenderer {
             drawQuad()
         }
         fun blur(srcTex: Int, dstFbo: Int, dx: Float, dy: Float, sigma: Float) {
+            // Wide kernels sample sparsely (bilinear taps) so cost stays bounded.
+            val stride = max(1f, sigma / 14f)
             GLES30.glUseProgram(progBlur)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, dstFbo)
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, srcTex)
             GLES30.glUniform1i(uniform(progBlur, "uTex"), 0)
-            GLES30.glUniform2f(uniform(progBlur, "uStep"), dx, dy)
-            GLES30.glUniform1f(uniform(progBlur, "uSigma"), sigma)
-            GLES30.glUniform1i(uniform(progBlur, "uRadius"), min(48, ceil(sigma * 3f).toInt()))
+            GLES30.glUniform2f(uniform(progBlur, "uStep"), dx * stride, dy * stride)
+            GLES30.glUniform1f(uniform(progBlur, "uSigma"), sigma / stride)
+            GLES30.glUniform1i(uniform(progBlur, "uRadius"), min(44, ceil(sigma / stride * 3f).toInt()))
             drawQuad()
+        }
+        fun blurPair(a: Int, b: Int, sigma: Float) {
+            blur(fxTex[a], fxFbo[b], 1f / fxW, 0f, sigma)
+            blur(fxTex[b], fxFbo[a], 0f, 1f / fxH, sigma)
         }
         val scale = max(fxW, fxH) / FX_LONG_EDGE.toFloat()
         if (fx.halation > 0f) {
@@ -325,14 +339,24 @@ class GlRenderer {
             blur(fxTex[2], fxFbo[3], 1f / fxW, 0f, sigma)
             blur(fxTex[3], fxFbo[2], 0f, 1f / fxH, sigma)
         }
-        if (fx.tiltShift > 0f || fx.softFocus > 0f || fx.swirl > 0f) {
-            val sigma = 3.2f * scale
+        if (fx.tiltShift > 0f || fx.softFocus > 0f || fx.swirl > 0f || adj.clarity != 0f) {
             prefilter(3, fxFbo[4])
-            blur(fxTex[4], fxFbo[5], 1f / fxW, 0f, sigma)
-            blur(fxTex[5], fxFbo[4], 0f, 1f / fxH, sigma)
+            blurPair(4, 5, 4.5f * scale)
+        }
+        if (adj.glow > 0f || adj.hdr != 0f) {
+            prefilter(3, fxFbo[8])
+            blurPair(8, 9, 20f * scale)
+        }
+        if (adj.dehaze != 0f) {
+            prefilter(4, fxFbo[10])
+            blurPair(10, 11, 10f * scale)
         }
         if (fx.star > 0f || fx.streak > 0f) {
             prefilter(2, fxFbo[6])
+            // Mip chain of the glint layer gives its mean (density) in one texture fetch.
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
+            GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_NEAREST)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fxFbo[7])
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -353,14 +377,14 @@ class GlRenderer {
             if (fx.star > 0f) {
                 val arms = (fx.starPoints / 2).coerceIn(2, 4)
                 val step = (0.7f + fx.starLength * 1.8f) * scale
-                val k = fx.star * 2.4f
+                val k = fx.star * 2.0f
                 for (i in 0 until arms) {
                     val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
                     arm(deg, step, 48, 0.065f, k, k * 0.97f, k * 0.92f)
                 }
             }
             if (fx.streak > 0f) {
-                val k = fx.streak * 2.8f
+                val k = fx.streak * 2.4f
                 arm(0.0, 1.7f * scale, 64, 0.045f, k * 0.35f, k * 0.6f, k)
             }
             GLES30.glDisable(GLES30.GL_BLEND)
@@ -383,8 +407,12 @@ class GlRenderer {
         bind(2, GLES30.GL_TEXTURE_2D, grainTex, "uGrain")
         bind(3, GLES30.GL_TEXTURE_2D, fxTex[0], "uHal")
         bind(4, GLES30.GL_TEXTURE_2D, fxTex[2], "uBloom")
-        bind(5, GLES30.GL_TEXTURE_2D, fxTex[4], "uLensBlur")
+        bind(5, GLES30.GL_TEXTURE_2D, fxTex[4], "uLocal")
         bind(6, GLES30.GL_TEXTURE_2D, fxTex[7], "uStarTex")
+        bind(7, GLES30.GL_TEXTURE_2D, fxTex[8], "uWide")
+        bind(8, GLES30.GL_TEXTURE_2D, fxTex[10], "uHaze")
+        val curvesOn = !adj.curves.isIdentity
+        bind(9, GLES30.GL_TEXTURE_2D, if (curvesOn) curveTexture(adj.curves) else grainTex, "uCurve")
         val g = gains(adj)
         GLES30.glUniform1f(uniform(p, "uLutSize"), lutSize.toFloat())
         GLES30.glUniform1f(uniform(p, "uIntensity"), adj.intensity)
@@ -394,6 +422,35 @@ class GlRenderer {
         GLES30.glUniform1f(uniform(p, "uFade"), adj.fade)
         GLES30.glUniform1f(uniform(p, "uHighlights"), adj.highlights)
         GLES30.glUniform1f(uniform(p, "uShadows"), adj.shadows)
+        GLES30.glUniform1f(uniform(p, "uWhites"), adj.whites)
+        GLES30.glUniform1f(uniform(p, "uBlacks"), adj.blacks)
+        GLES30.glUniform1f(uniform(p, "uVibrance"), adj.vibrance)
+        GLES30.glUniform1f(uniform(p, "uTexture"), adj.texture)
+        GLES30.glUniform1f(uniform(p, "uClarity"), adj.clarity)
+        GLES30.glUniform1f(uniform(p, "uDehaze"), adj.dehaze)
+        GLES30.glUniform1f(uniform(p, "uSharpen"), adj.sharpen)
+        GLES30.glUniform1f(uniform(p, "uHdr"), adj.hdr)
+        GLES30.glUniform1f(uniform(p, "uGlow"), adj.glow)
+        val srcLong = max(srcW, srcH).toFloat()
+        GLES30.glUniform1f(uniform(p, "uTexLod"), (1.6f + log2(srcLong / 2048f)).coerceAtLeast(0.5f))
+        GLES30.glUniform1f(uniform(p, "uSharpLod"), 0.9f)
+        GLES30.glUniform1f(uniform(p, "uCurveOn"), if (curvesOn) 1f else 0f)
+        GLES30.glUniform1f(uniform(p, "uMixerOn"), if (adj.mixerActive) 1f else 0f)
+        if (adj.mixerActive) GLES30.glUniform3fv(uniform(p, "uMixer"), 8, adj.mixer.toFloatArray(), 0)
+        val gr = adj.grade
+        GLES30.glUniform1f(uniform(p, "uGradeOn"), if (gr.isIdentity) 0f else 1f)
+        if (!gr.isIdentity) {
+            fun dir(hue: Float, sat: Float): FloatArray {
+                val d = gradeDirection(hue)
+                return floatArrayOf(d[0] * sat * 0.085f, d[1] * sat * 0.085f)
+            }
+            val sh = dir(gr.shadowHue, gr.shadowSat); val md = dir(gr.midHue, gr.midSat); val hi = dir(gr.highHue, gr.highSat)
+            GLES30.glUniform2f(uniform(p, "uGradeS"), sh[0], sh[1])
+            GLES30.glUniform2f(uniform(p, "uGradeM"), md[0], md[1])
+            GLES30.glUniform2f(uniform(p, "uGradeH"), hi[0], hi[1])
+            GLES30.glUniform1f(uniform(p, "uBalance"), gr.balance)
+            GLES30.glUniform1f(uniform(p, "uBlending"), gr.blending)
+        }
         GLES30.glUniform1f(uniform(p, "uHalation"), fx.halation)
         if (mono) GLES30.glUniform3f(uniform(p, "uHalColor"), 0.55f, 0.55f, 0.55f)
         else GLES30.glUniform3f(uniform(p, "uHalColor"), 1.0f, 0.30f, 0.10f)
@@ -414,9 +471,12 @@ class GlRenderer {
         GLES30.glUniform1i(uniform(p, "uRot"), rot)
         val dispAspect = if (rot % 2 == 1) srcH.toFloat() / srcW else srcW.toFloat() / srcH
         val theta = Math.toRadians(geo.angle.toDouble())
-        val fill = kotlin.math.cos(kotlin.math.abs(theta)) + max(dispAspect, 1f / dispAspect) * kotlin.math.sin(kotlin.math.abs(theta))
+        val geoOn = geo.angle != 0f || geo.perspV != 0f || geo.perspH != 0f
+        val (kh, kv) = geo.keystone(dispAspect)
+        GLES30.glUniform1f(uniform(p, "uGeoOn"), if (geoOn) 1f else 0f)
         GLES30.glUniform1f(uniform(p, "uAngle"), theta.toFloat())
-        GLES30.glUniform1f(uniform(p, "uFillScale"), fill.toFloat())
+        GLES30.glUniform1f(uniform(p, "uFillScale"), geo.fillScale(dispAspect))
+        GLES30.glUniform2f(uniform(p, "uKeystone"), kh, kv)
         GLES30.glUniform1f(uniform(p, "uDispAspect"), dispAspect)
         GLES30.glUniform2f(uniform(p, "uFlip"), if (geo.flipH) 1f else 0f, if (geo.flipV) 1f else 0f)
         GLES30.glUniform1f(uniform(p, "uDistort"), fx.distortion)
@@ -450,12 +510,15 @@ class GlRenderer {
     /** Render a full-resolution source. Glows come from the resident preview source. */
     fun renderFull(source: Bitmap, lut: LutCache.Lut, adj: Adjustments, fx: Effects, mono: Boolean, geo: Geometry): Bitmap {
         check(previewTex != 0) { "No preview source" }
-        val (w, h) = outputSize(source.width, source.height, geo)
-        val tex = uploadBitmap(source, mipmaps = false)
+        val sw = source.width
+        val sh = source.height
+        val (w, h) = outputSize(sw, sh, geo)
+        // Mip-mapped so Texture / Sharpen sample the same relative scales as the preview.
+        val tex = uploadBitmap(source, mipmaps = true)
         source.recycle()
         try {
             glowPasses(adj, fx, geo)
-            mainPass(tex, source.width, source.height, w, h, lutTexture(lut), lut.size, adj, fx, mono, geo)
+            mainPass(tex, sw, sh, w, h, lutTexture(lut), lut.size, adj, fx, mono, geo)
             GLES30.glFinish()
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             readInto(out, w, h)
@@ -467,6 +530,38 @@ class GlRenderer {
     }
 
     val previewSize get() = previewW to previewH
+
+    private fun curveTexture(curves: Curves): Int {
+        if (curveTex == 0) {
+            curveTex = genTexture()
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, curveTex)
+            texParams(GLES30.GL_LINEAR, GLES30.GL_LINEAR, GLES30.GL_CLAMP_TO_EDGE)
+        }
+        if (curves != curveKey) {
+            val data = curves.bake(256)
+            val fb = ByteBuffer.allocateDirect(data.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            fb.put(data).position(0)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, curveTex)
+            GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 4)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA16F, 256, 1, 0, GLES30.GL_RGBA, GLES30.GL_FLOAT, fb)
+            curveKey = curves
+        }
+        return curveTex
+    }
+
+    /** Unit OKLab (a, b) direction of an HSV hue, so the grading wheel shows what it applies. */
+    private fun gradeDirection(hue: Float): FloatArray {
+        val h = ((hue % 360f) + 360f) % 360f / 60f
+        val x = 1f - kotlin.math.abs(h % 2f - 1f)
+        val (r, g, b) = when (h.toInt()) {
+            0 -> Triple(1f, x, 0f); 1 -> Triple(x, 1f, 0f); 2 -> Triple(0f, 1f, x)
+            3 -> Triple(0f, x, 1f); 4 -> Triple(x, 0f, 1f); else -> Triple(1f, 0f, x)
+        }
+        val o = FloatArray(3)
+        ColorMath.linearToOklab(ColorMath.srgbToLinear(r), ColorMath.srgbToLinear(g), ColorMath.srgbToLinear(b), o)
+        val len = kotlin.math.sqrt(o[1] * o[1] + o[2] * o[2]).coerceAtLeast(1e-4f)
+        return floatArrayOf(o[1] / len, o[2] / len)
+    }
 
     /** A direction given in the displayed photo, mapped into source-texture axes (unit length in pixels). */
     private fun displayToSource(deg: Double, geo: Geometry): Pair<Float, Float> {
@@ -482,7 +577,7 @@ class GlRenderer {
     }
 
     companion object {
-        private const val FX_COUNT = 8
+        private const val FX_COUNT = 12
 
         /** Pixel size of the developed frame for a source of [w]x[h] under [geo]. */
         fun outputSize(w: Int, h: Int, geo: Geometry): Pair<Int, Int> {

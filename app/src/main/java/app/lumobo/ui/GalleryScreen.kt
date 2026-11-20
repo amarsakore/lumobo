@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CameraRoll
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Cloud
 import app.lumobo.data.AppSettings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -73,6 +74,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import app.lumobo.data.Album
 import app.lumobo.data.MediaImage
 import app.lumobo.data.MediaRepository
+import app.lumobo.data.MediaThumb
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import app.lumobo.film.Profiles
 import app.lumobo.ui.components.Chip
 import app.lumobo.ui.components.RoundIconButton
@@ -134,7 +141,7 @@ fun GalleryScreen(
     Column(Modifier.fillMaxSize().background(Palette.Bg)) {
         // Header
         Row(
-            Modifier.statusBarsPadding().fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+            Modifier.statusBarsPadding().fillMaxWidth().padding(start = 20.dp, end = 14.dp, top = 8.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -143,11 +150,10 @@ fun GalleryScreen(
                     Spacer(Modifier.width(8.dp))
                     Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(Palette.Orange))
                 }
-                Text("FILM LAB · ${Profiles.all.size - 1} STOCKS & CAMERAS", style = Type.Label.copy(fontSize = 10.sp))
             }
-            RoundIconButton(Icons.Outlined.AddPhotoAlternate, "Pick a photo", onClick = { pick() })
+            RoundIconButton(Icons.Outlined.AddPhotoAlternate, "Pick from Google Photos or files", onClick = { pick() }, modifier = Modifier.size(38.dp))
             Spacer(Modifier.width(8.dp))
-            RoundIconButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
+            RoundIconButton(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings, modifier = Modifier.size(38.dp))
         }
 
         if (accessState == Access.NONE) {
@@ -158,7 +164,7 @@ fun GalleryScreen(
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             SegmentedTabs(listOf("Library", "Developed"), tab, { tab = it })
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
 
         val all = images
         if (all == null) {
@@ -183,7 +189,7 @@ fun GalleryScreen(
                 all.filter { !it.isDeveloped && (showShots || !(it.bucket.contains("screenshot", true) || it.relativePath.contains("Screenshots"))) }
             }
             val albums = remember(library) { MediaRepository.albums(library) }
-            AlbumRow(albums, albumId) { albumId = it }
+            AlbumRow(albums, albumId, onCloud = { pick() }) { albumId = it }
             val shown = if (albumId == null) library else library.filter { it.bucketId == albumId }
             PhotoGrid(shown, settings.gridColumns, emptyText = "No photos here yet.") { list, i -> onOpen(list[i].uri) }
         } else {
@@ -194,12 +200,24 @@ fun GalleryScreen(
 }
 
 @Composable
-private fun AlbumRow(albums: List<Album>, selected: Long?, onSelect: (Long?) -> Unit) {
+private fun AlbumRow(albums: List<Album>, selected: Long?, onCloud: () -> Unit, onSelect: (Long?) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.padding(bottom = 10.dp),
     ) {
+        item {
+            // Android's photo picker includes your Google Photos cloud library.
+            Row(
+                Modifier.clip(RoundedCornerShape(50)).background(Palette.Surface2).clickable(onClick = onCloud)
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Cloud, null, tint = Palette.Amber, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Google Photos", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = Palette.Text)
+            }
+        }
         item { Chip("All photos", selected == null, { onSelect(null) }) }
         items(albums, key = { it.id }) { a -> Chip(a.name, selected == a.id, { onSelect(a.id) }) }
     }
@@ -209,6 +227,8 @@ private val monthFmt = DateTimeFormatter.ofPattern("MMMM yyyy")
 
 @Composable
 private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String, onClick: (List<MediaImage>, Int) -> Unit) {
+    val ctx = LocalContext.current
+    val settings = remember { AppSettings.get(ctx) }
     if (images.isEmpty()) {
         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -225,13 +245,32 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
         images.withIndex().groupBy { Instant.ofEpochMilli(it.value.dateMillis).atZone(zone).format(monthFmt) }
     }
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val cellPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp.toPx() / columns.coerceIn(2, 6)).toInt().coerceIn(160, 720)
+    }
     LazyVerticalGrid(
-        columns = GridCells.Fixed(columns.coerceIn(3, 5)),
+        columns = GridCells.Fixed(columns.coerceIn(2, 6)),
         state = rememberLazyGridState(),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
         contentPadding = PaddingValues(bottom = bottom + 16.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            // Pinch in / out to show more or fewer photos per row.
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                var acc = 1f
+                do {
+                    val ev = awaitPointerEvent(PointerEventPass.Initial)
+                    if (ev.changes.count { it.pressed } >= 2) {
+                        acc *= ev.calculateZoom()
+                        val cols = settings.gridColumns
+                        if (acc > 1.3f && cols > 2) { settings.gridColumns = cols - 1; acc = 1f }
+                        else if (acc < 0.77f && cols < 6) { settings.gridColumns = cols + 1; acc = 1f }
+                        ev.changes.forEach { it.consume() }
+                    }
+                } while (ev.changes.any { it.pressed })
+            }
+        },
     ) {
         sections.forEach { (month, list) ->
             item(span = { GridItemSpan(maxLineSpan) }, key = "h_$month", contentType = "header") {
@@ -243,8 +282,7 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
             }
             items(list, key = { it.value.id }, contentType = { "photo" }) { (index, img) ->
                 AsyncImage(
-                    model = ImageRequest.Builder(context).data(img.uri).size(if (columns > 3) 288 else 384)
-                        .memoryCacheKey("${img.uri}#${img.modified}").crossfade(180).build(),
+                    model = ImageRequest.Builder(context).data(MediaThumb(img.uri, img.modified)).size(cellPx).build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

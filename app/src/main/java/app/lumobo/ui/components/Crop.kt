@@ -1,7 +1,22 @@
 package app.lumobo.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.animate
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -32,6 +48,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** A crop aspect. [ratio] is width / height in pixels; null for Original (image aspect) and Free. */
 data class AspectPreset(val id: String, val label: String, val ratio: Float?)
@@ -121,7 +138,24 @@ object CropMath {
         return g.copy(left = l, top = t, right = r, bottom = b)
     }
 
+    /** Pinch: shrink the crop by [factor] (zooming the photo in) and move it by ([dx], [dy]). */
+    fun zoom(g: Geometry, factor: Float, dx: Float, dy: Float): Geometry {
+        var w = g.right - g.left
+        var h = g.bottom - g.top
+        w /= factor; h /= factor
+        val over = max(w, h)
+        if (over > 1f) { w /= over; h /= over }
+        val under = min(w, h)
+        if (under < MIN) { w *= MIN / under; h *= MIN / under }
+        val cx = (g.left + g.right) / 2f + dx
+        val cy = (g.top + g.bottom) / 2f + dy
+        val l = (cx - w / 2f).coerceIn(0f, 1f - w)
+        val t = (cy - h / 2f).coerceIn(0f, 1f - h)
+        return g.copy(left = l, top = t, right = l + w, bottom = t + h)
+    }
+
     const val NONE = -1
+    const val PINCH = 9
     const val MOVE = 0
     const val TL = 1
     const val TR = 2
@@ -134,8 +168,10 @@ object CropMath {
 }
 
 /**
- * Interactive crop frame over [image] (the full, rotated frame). Drag corners to resize,
- * edges when the aspect is free, and inside to move. Reports changes through [onChange].
+ * Interactive crop frame over [image] (the full, transformed frame). Drag corners to resize,
+ * edges when the aspect is free, and inside to move. When a drag ends the view glides so the
+ * crop fills the screen (Lightroom-style). Pinch to zoom the photo inside the frame, which
+ * tightens (or loosens) the crop; drag with two fingers to move it. Reports changes through [onChange].
  */
 @Composable
 fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit, modifier: Modifier = Modifier, fineGrid: Boolean = false) {
@@ -144,6 +180,10 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
     val change by rememberUpdatedState(onChange)
     var mode by remember { mutableIntStateOf(CropMath.NONE) }
     val work = remember { arrayOf(geo) }
+    val zoom = remember { androidx.compose.animation.core.Animatable(1f) }
+    val cx = remember { androidx.compose.animation.core.Animatable(0.5f) }
+    val cy = remember { androidx.compose.animation.core.Animatable(0.5f) }
+    val scope = rememberCoroutineScope()
     BoxWithConstraints(modifier) {
         val pad = with(density) { 22.dp.toPx() }
         val bw = constraints.maxWidth.toFloat()
@@ -151,17 +191,42 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
         val s = min((bw - 2 * pad) / image.width, (bh - 2 * pad) / image.height)
         val dw = image.width * s
         val dh = image.height * s
-        val ox = (bw - dw) / 2f
-        val oy = (bh - dh) / 2f
         val cornerR = with(density) { 34.dp.toPx() }
         val edgeR = with(density) { 22.dp.toPx() }
 
+        // Glide to frame the crop whenever the user isn't dragging.
+        androidx.compose.runtime.LaunchedEffect(geo, mode == CropMath.NONE, dw, dh) {
+            if (mode != CropMath.NONE) return@LaunchedEffect
+            val target = min((bw - 2 * pad) / (geo.width * dw), (bh - 2 * pad) / (geo.height * dh)).coerceIn(1f, 12f)
+            val tcx = if (target <= 1.001f) 0.5f else (geo.left + geo.right) / 2f
+            val tcy = if (target <= 1.001f) 0.5f else (geo.top + geo.bottom) / 2f
+            val spec = androidx.compose.animation.core.tween<Float>(320, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            kotlinx.coroutines.coroutineScope {
+                launch { zoom.animateTo(target, spec) }
+                launch { cx.animateTo(tcx, spec) }
+                launch { cy.animateTo(tcy, spec) }
+            }
+        }
+        val z = zoom.value
+        fun sx(nx: Float) = bw / 2f + (nx - cx.value) * dw * zoom.value
+        fun sy(ny: Float) = bh / 2f + (ny - cy.value) * dh * zoom.value
+
+        /** Keep the crop filling the view while pinching, so the photo zooms behind a fixed frame. */
+        fun frame(g: Geometry) {
+            val target = min((bw - 2 * pad) / (g.width * dw), (bh - 2 * pad) / (g.height * dh)).coerceIn(1f, 12f)
+            scope.launch {
+                zoom.snapTo(target)
+                cx.snapTo(if (target <= 1.001f) 0.5f else (g.left + g.right) / 2f)
+                cy.snapTo(if (target <= 1.001f) 0.5f else (g.top + g.bottom) / 2f)
+            }
+        }
+
         fun hit(p: Offset): Int {
             val g = current
-            val l = ox + g.left * dw
-            val t = oy + g.top * dh
-            val r = ox + g.right * dw
-            val b = oy + g.bottom * dh
+            val l = sx(g.left)
+            val t = sy(g.top)
+            val r = sx(g.right)
+            val b = sy(g.bottom)
             val corners = listOf(CropMath.TL to Offset(l, t), CropMath.TR to Offset(r, t), CropMath.BR to Offset(r, b), CropMath.BL to Offset(l, b))
             corners.minByOrNull { hypot(it.second.x - p.x, it.second.y - p.y) }?.let { (m, c) ->
                 if (hypot(c.x - p.x, c.y - p.y) < cornerR) return m
@@ -179,40 +244,72 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
         Canvas(
             Modifier
                 .fillMaxSize()
+                .clipToBounds()
                 .pointerInput(image.width, image.height, dw, dh) {
-                    detectDragGestures(
-                        onDragStart = { mode = hit(it); work[0] = current },
-                        onDragEnd = { mode = CropMath.NONE },
-                        onDragCancel = { mode = CropMath.NONE },
-                        onDrag = { c, d ->
-                            if (mode == CropMath.NONE) return@detectDragGestures
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val target = hit(down.position)
+                        work[0] = current
+                        var pinching = false
+                        var moving = false
+                        while (true) {
+                            val ev = awaitPointerEvent()
+                            val pressed = ev.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
+                            if (pressed.size >= 2) {
+                                // Two fingers: zoom the photo inside the frame (a tighter crop) and drag it.
+                                if (!pinching) { pinching = true; mode = CropMath.PINCH; work[0] = current }
+                                val k = zoom.value
+                                val pan = ev.calculatePan()
+                                val next = CropMath.zoom(work[0], ev.calculateZoom(), -pan.x / (dw * k), -pan.y / (dh * k))
+                                work[0] = next
+                                change(next)
+                                frame(next)
+                                ev.changes.forEach { it.consume() }
+                                continue
+                            }
+                            if (pinching) continue
+                            val c = pressed[0]
+                            if (!moving) {
+                                if ((c.position - down.position).getDistance() < viewConfiguration.touchSlop) continue
+                                moving = true
+                                mode = target
+                            }
                             c.consume()
+                            val d = c.positionChange()
+                            if (mode == CropMath.NONE) continue
                             val g = work[0]
                             val ratio = CropMath.lockedRatio(g.aspect, image.width, image.height)
                             val rn = ratio?.let { it * image.height / image.width }
-                            val next = CropMath.drag(g, mode, d.x / dw, d.y / dh, rn)
+                            val k = zoom.value
+                            val next = CropMath.drag(g, mode, d.x / (dw * k), d.y / (dh * k), rn)
                             work[0] = next
                             change(next)
-                        },
-                    )
+                        }
+                        mode = CropMath.NONE
+                    }
                 },
         ) {
+            val ox = sx(0f)
+            val oy = sy(0f)
+            val iw = dw * z
+            val ih = dh * z
             drawImage(
                 image,
                 dstOffset = IntOffset(ox.roundToInt(), oy.roundToInt()),
-                dstSize = IntSize(dw.roundToInt(), dh.roundToInt()),
+                dstSize = IntSize(iw.roundToInt(), ih.roundToInt()),
                 filterQuality = FilterQuality.High,
             )
             val g = current
-            val l = ox + g.left * dw
-            val t = oy + g.top * dh
-            val r = ox + g.right * dw
-            val b = oy + g.bottom * dh
+            val l = sx(g.left)
+            val t = sy(g.top)
+            val r = sx(g.right)
+            val b = sy(g.bottom)
             val shade = Color.Black.copy(alpha = 0.62f)
-            drawRect(shade, Offset(ox, oy), Size(dw, t - oy))
-            drawRect(shade, Offset(ox, b), Size(dw, oy + dh - b))
-            drawRect(shade, Offset(ox, t), Size(l - ox, b - t))
-            drawRect(shade, Offset(r, t), Size(ox + dw - r, b - t))
+            drawRect(shade, Offset(0f, 0f), Size(size.width, t))
+            drawRect(shade, Offset(0f, b), Size(size.width, size.height - b))
+            drawRect(shade, Offset(0f, t), Size(l, b - t))
+            drawRect(shade, Offset(r, t), Size(size.width - r, b - t))
             val thin = 1.dp.toPx()
             val grid = Color.White.copy(alpha = if (mode != CropMath.NONE || fineGrid) 0.55f else 0.3f)
             val lines = if (fineGrid) 9 else 3
@@ -236,9 +333,9 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
 }
 
 /**
- * Straighten dial in the style of Lightroom / Snapseed: a tick ruler you drag sideways.
- * [value] is in degrees (-45..45). Double-tap resets. [onActive] reports dragging, so the
- * photo can show a fine levelling grid.
+ * Ruler dial in the style of Lightroom / Snapseed, dragged sideways. Used for straighten
+ * (degrees, ±45) and perspective (±100). Double-tap resets. [onActive] reports dragging, so
+ * the photo can show a fine levelling grid.
  */
 @Composable
 fun AngleDial(
@@ -246,15 +343,22 @@ fun AngleDial(
     onChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onActive: (Boolean) -> Unit = {},
+    range: Float = 45f,
+    unitDp: Float = 9f,
+    format: (Float) -> String = { v -> String.format(java.util.Locale.US, "%+.1f°", v).replace("+0.0°", "0°").replace("-0.0°", "0°") },
 ) {
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val haptics = rememberSoftHaptics()
     val current by rememberUpdatedState(value)
+    val change by rememberUpdatedState(onChange)
+    val active by rememberUpdatedState(onActive)
+    val lim by rememberUpdatedState(range)
     val density = LocalDensity.current
-    val pxPerDegree = with(density) { 9.dp.toPx() }
+    val pxPerUnit = with(density) { unitDp.dp.toPx() }
+    val tick = if (range > 50f) 5 else 1
     val acc = remember { floatArrayOf(0f) }
     androidx.compose.foundation.layout.Column(modifier, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
         androidx.compose.material3.Text(
-            String.format(java.util.Locale.US, "%+.1f°", value).replace("+0.0°", "0°").replace("-0.0°", "0°"),
+            format(value),
             style = app.lumobo.ui.theme.Type.Mono.copy(
                 color = if (abs(value) > 0.05f) app.lumobo.ui.theme.Palette.Amber else app.lumobo.ui.theme.Palette.Text,
                 fontSize = androidx.compose.ui.unit.TextUnit(15f, androidx.compose.ui.unit.TextUnitType.Sp),
@@ -266,44 +370,44 @@ fun AngleDial(
                 .height(44.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onDoubleTap = {
-                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        onChange(0f)
+                        haptics.confirm()
+                        change(0f)
                     })
                 }
                 .pointerInput(Unit) {
                     detectHorizontalDragGestures(
-                        onDragStart = { acc[0] = current; onActive(true) },
-                        onDragEnd = { onActive(false) },
-                        onDragCancel = { onActive(false) },
-                    ) { change, dx ->
-                        change.consume()
+                        onDragStart = { acc[0] = current; active(true) },
+                        onDragEnd = { active(false) },
+                        onDragCancel = { active(false) },
+                    ) { ch, dx ->
+                        ch.consume()
                         val old = acc[0]
-                        var next = (old - dx / pxPerDegree).coerceIn(-45f, 45f)
+                        var next = (old - dx / pxPerUnit).coerceIn(-lim, lim)
                         if (abs(next) < 0.25f && abs(old) >= 0.25f) next = 0f // detent at level
-                        if (kotlin.math.floor(old) != kotlin.math.floor(next) || (next == 0f && old != 0f)) {
-                            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                        }
+                        if (next == 0f && old != 0f) haptics.detent()
+                        else if (kotlin.math.floor(old / tick) != kotlin.math.floor(next / tick)) haptics.tick()
                         acc[0] = next
-                        onChange((next * 10f).roundToInt() / 10f)
+                        change((next * 10f).roundToInt() / 10f)
                     }
                 },
         ) {
-            val cx = size.width / 2f
+            val mid = size.width / 2f
             val base = size.height * 0.62f
-            val first = kotlin.math.ceil(current - cx / pxPerDegree).toInt().coerceAtLeast(-45)
-            val last = kotlin.math.floor(current + cx / pxPerDegree).toInt().coerceAtMost(45)
+            val r = range.toInt()
+            val first = kotlin.math.ceil(current - mid / pxPerUnit).toInt().coerceAtLeast(-r)
+            val last = kotlin.math.floor(current + mid / pxPerUnit).toInt().coerceAtMost(r)
             for (d in first..last) {
-                val x = cx + (d - current) * pxPerDegree
-                val major = d % 15 == 0
-                val mid = d % 5 == 0
-                val h = when { major -> 18.dp.toPx(); mid -> 12.dp.toPx(); else -> 7.dp.toPx() }
-                val fade = 1f - (abs(x - cx) / cx).coerceIn(0f, 1f) * 0.75f
-                val color = (if (d == 0) app.lumobo.ui.theme.Palette.Amber else Color.White).copy(alpha = (if (mid) 0.9f else 0.45f) * fade)
+                if (d % tick != 0) continue
+                val x = mid + (d - current) * pxPerUnit
+                val major = d % (15 * tick) == 0
+                val med = d % (5 * tick) == 0
+                val h = when { major -> 18.dp.toPx(); med -> 12.dp.toPx(); else -> 7.dp.toPx() }
+                val fade = 1f - (abs(x - mid) / mid).coerceIn(0f, 1f) * 0.75f
+                val color = (if (d == 0) app.lumobo.ui.theme.Palette.Amber else Color.White).copy(alpha = (if (med) 0.9f else 0.45f) * fade)
                 drawLine(color, Offset(x, base - h), Offset(x, base), if (major) 2.dp.toPx() else 1.dp.toPx())
             }
-            // Centre needle
-            drawLine(app.lumobo.ui.theme.Palette.Amber, Offset(cx, 0f), Offset(cx, size.height), 2.5.dp.toPx())
-            drawCircle(app.lumobo.ui.theme.Palette.Amber, 3.dp.toPx(), Offset(cx, size.height - 3.dp.toPx()))
+            drawLine(app.lumobo.ui.theme.Palette.Amber, Offset(mid, 0f), Offset(mid, size.height), 2.5.dp.toPx())
+            drawCircle(app.lumobo.ui.theme.Palette.Amber, 3.dp.toPx(), Offset(mid, size.height - 3.dp.toPx()))
         }
     }
 }

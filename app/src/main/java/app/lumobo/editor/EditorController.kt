@@ -36,12 +36,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /** Process-wide rendering resources. */
 object Engine {
     val renderer by lazy { GlRenderer() }
-    val luts = LutCache(size = 64, capacity = 10)
+    val luts = LutCache(size = 64, capacity = 16)
 }
 
 sealed interface EditorStatus {
@@ -104,6 +105,17 @@ class EditorController(
         private set
 
     private var captureDate: LocalDate = LocalDate.now()
+    private var source: Bitmap? = null
+    private var prefetchJob: Job? = null
+
+    /** RGB histogram of the current render (64 bins each, normalised), when [wantHistogram]. */
+    var histogram by mutableStateOf<FloatArray?>(null)
+        private set
+    @Volatile var wantHistogram = false
+        set(v) { field = v; if (v) invalidate() }
+
+    /** Category of the last film used, to open the film strip where the user left off. */
+    val lastCategory get() = Profiles.byId(settings.lastFilmId).category
     private val buffers = arrayOfNulls<Bitmap>(3)
     private val frameBuffers = arrayOfNulls<Bitmap>(3)
     private var bufIdx = 0
@@ -116,9 +128,9 @@ class EditorController(
             fx = initial.fx
             geo = initial.geo
         } else {
-            val start = if (settings.rememberLastFilm) Profiles.byId(settings.lastFilmId) else Profiles.ORIGINAL
-            profile = start
-            fx = settings.effectsFor(start)
+            // A library photo always opens as shot. Edits live only in developed copies.
+            profile = Profiles.ORIGINAL
+            fx = settings.effectsFor(Profiles.ORIGINAL)
         }
         commit()
     }
@@ -192,6 +204,7 @@ class EditorController(
             val src = withContext(Dispatchers.IO) { Images.decode(context, uri, PREVIEW_EDGE) }
             captureDate = withContext(Dispatchers.IO) { Images.captureDate(context, uri) }
             sourceSize = src.width to src.height
+            source = src
             original = src.asImageBitmap()
             Engine.renderer.onGl { setPreviewSource(src) }
             status = EditorStatus.Ready
@@ -233,11 +246,13 @@ class EditorController(
                 val (w, h) = GlRenderer.outputSize(sw, sh, g)
                 val target = buffer(idx, w, h)
                 Engine.renderer.onGl { renderPreview(lut, a, f, p.isMono, g, target) }
+                val hist = if (wantHistogram) withContext(Dispatchers.Default) { histogramOf(target) } else null
                 val shown = if (crop) target else withContext(Dispatchers.Default) {
                     if (f.dateStamp) Overlays.drawDateStamp(target, captureDate, settings.dateColor, settings.dateFormat)
                     Overlays.frame(target, f.frame, p.name, frameBuffers[idx]).also { if (it !== target) frameBuffers[idx] = it }
                 }
                 rendered = shown.asImageBitmap()
+                if (hist != null) histogram = hist
                 lastRenderMs = (System.nanoTime() - t0) / 1_000_000
             } catch (c: CancellationException) {
                 throw c
@@ -280,6 +295,118 @@ class EditorController(
         }.awaitAll()
     }
 
+    private fun histogramOf(b: Bitmap): FloatArray {
+        val bins = 64
+        val h = FloatArray(bins * 3)
+        val row = IntArray(b.width)
+        val step = maxOf(1, b.height / 160)
+        var y = 0
+        while (y < b.height) {
+            b.getPixels(row, 0, b.width, 0, y, b.width, 1)
+            var x = 0
+            while (x < row.size) {
+                val c = row[x]
+                h[((c shr 16) and 255) * bins / 256]++
+                h[bins + ((c shr 8) and 255) * bins / 256]++
+                h[2 * bins + (c and 255) * bins / 256]++
+                x += 4
+            }
+            y += step
+        }
+        val max = h.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+        for (i in h.indices) h[i] = kotlin.math.sqrt(h[i] / max)
+        return h
+    }
+
+    /** Lightroom-style Auto: balance exposure, clipping and shadows from the original's histogram. */
+    fun autoTone() {
+        val src = source ?: return
+        val lum = FloatArray(4096)
+        var n = 0
+        val weights = FloatArray(4096) { 1f }
+        val stepX = maxOf(1, src.width / 64)
+        val stepY = maxOf(1, src.height / 64)
+        var yy = 0
+        while (yy < src.height && n < lum.size) {
+            var xx = 0
+            while (xx < src.width && n < lum.size) {
+                val c = src.getPixel(xx, yy)
+                // Like a camera's centre-weighted meter: the middle counts up to twice as much.
+                val dx = xx / (src.width - 1f) - 0.5f
+                val dy = yy / (src.height - 1f) - 0.5f
+                weights[n] = 1f + (1f - (dx * dx + dy * dy) * 4f).coerceIn(0f, 1f)
+                lum[n++] = (0.2126f * ((c shr 16) and 255) + 0.7152f * ((c shr 8) and 255) + 0.0722f * (c and 255)) / 255f
+                xx += stepX
+            }
+            yy += stepY
+        }
+        if (n < 16) return
+        // Centre-weighted percentiles.
+        val order = (0 until n).sortedBy { lum[it] }
+        val sorted = FloatArray(n) { lum[order[it]] }
+        val cum = FloatArray(n)
+        var acc = 0f
+        for (i in 0 until n) { acc += weights[order[i]]; cum[i] = acc }
+        fun pct(p: Float): Float {
+            val target = p * acc
+            var lo = 0
+            var hi = n - 1
+            while (lo < hi) { val mid = (lo + hi) / 2; if (cum[mid] < target) lo = mid + 1 else hi = mid }
+            return sorted[lo]
+        }
+        // Mid-tone key from the middle half of the histogram; correct only part of the way,
+        // so backlit or night scenes keep their mood.
+        val med = ((pct(0.3f) + pct(0.5f) + pct(0.7f)) / 3f).coerceIn(0.02f, 0.98f)
+        val full = kotlin.math.ln(app.lumobo.film.ColorMath.srgbToLinear(0.44f) / app.lumobo.film.ColorMath.srgbToLinear(med)) / kotlin.math.ln(2f)
+        val ev = (full * 0.55f).coerceIn(-0.6f, 0.6f)
+        val gain = 2.0.pow(ev.toDouble()).toFloat()
+        fun shifted(v: Float) = app.lumobo.film.ColorMath.linearToSrgb(app.lumobo.film.ColorMath.srgbToLinear(v) * gain).coerceIn(0f, 1f)
+        val lo = shifted(pct(0.01f))
+        val hi = shifted(pct(0.99f))
+        val p10 = shifted(pct(0.1f))
+        val p90 = shifted(pct(0.9f))
+        val dark = sorted.take(n).count { shifted(it) < 0.18f } / n.toFloat()
+        val bright = sorted.take(n).count { shifted(it) > 0.9f } / n.toFloat()
+        updateAdj(adj.copy(
+            exposure = ev / 2f,
+            whites = if (hi < 0.93f) ((0.97f - hi) / 0.16f).coerceIn(0f, 0.6f) else 0f,
+            blacks = if (lo > 0.04f) -((lo - 0.02f) / 0.10f).coerceIn(0f, 0.6f) else 0f,
+            highlights = if (bright > 0.08f) -(bright * 3f).coerceIn(0.15f, 0.6f) else 0f,
+            shadows = if (dark > 0.2f) (dark * 1.2f).coerceIn(0.1f, 0.5f) else 0f,
+            contrast = if (p90 - p10 < 0.55f) 0.15f else 0f,
+            vibrance = 0.12f,
+        ))
+    }
+
+    /** Bake the LUTs of a category in the background so tapping a film is instant. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun prefetch(category: app.lumobo.film.Category?) {
+        prefetchJob?.cancel()
+        prefetchJob = scope.launch(Dispatchers.Default.limitedParallelism(2)) {
+            for (p in Profiles.all.filter { it.category == category }) {
+                if (Engine.luts.peek(p) == null) Engine.luts.get(p)
+            }
+        }
+    }
+
+    fun applyLook(look: app.lumobo.data.SavedLook) {
+        profile = Profiles.byId(look.filmId)
+        adj = look.adj
+        fx = look.fx.copy(frame = fx.frame, dateStamp = fx.dateStamp)
+        settings.lastFilmId = profile.id
+        invalidate()
+        changed()
+    }
+
+    fun resetAll() {
+        profile = Profiles.ORIGINAL
+        adj = Adjustments()
+        fx = settings.effectsFor(Profiles.ORIGINAL)
+        geo = Geometry()
+        invalidate()
+        changed()
+    }
+
     fun select(p: FilmProfile) {
         if (p.id == profile.id) return
         val next = settings.effectsFor(p)
@@ -311,7 +438,7 @@ class EditorController(
     }
 
     fun updateGeo(g: Geometry) {
-        val reframed = g.rotation != geo.rotation || g.angle != geo.angle || g.flipH != geo.flipH || g.flipV != geo.flipV
+        val reframed = g.rotation != geo.rotation || g.angle != geo.angle || g.flipH != geo.flipH || g.flipV != geo.flipV || g.perspV != geo.perspV || g.perspH != geo.perspH
         geo = g
         if (!cropMode || reframed) invalidate()
         changed()
@@ -322,6 +449,9 @@ class EditorController(
         cropMode = on
         invalidate()
     }
+
+    /** The film's own starting effects (texture) under the current settings. */
+    val filmDefaults get() = settings.effectsFor(profile)
 
     fun resetAdjustments() = updateAdj(Adjustments(intensity = adj.intensity))
     fun resetEffects() = updateFx(settings.effectsFor(profile).copy(dateStamp = fx.dateStamp, frame = fx.frame).withLensOf(fx))

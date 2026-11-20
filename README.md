@@ -40,15 +40,17 @@
 
 ## Features
 
-- **66 looks in 9 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), Fujifilm simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), Ricoh GR image controls, Kodak and Fuji film stocks, cinema stocks, instant film, Ilford B&amp;W, and camera styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
+- **88 looks in 10 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), Fujifilm simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), Ricoh GR image controls, iPhone-style filters (Vivid, Dramatic, Mono, Silvertone, Noir…), Kodak and Fuji film stocks, cinema stocks, instant film, Ilford B&amp;W, and camera styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
 - **Film texture on every photo.** Each look gets grain, halation and bloom in its own flavour. Overall strength is set in Settings.
 - **Lens recipes.** Fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval-style swirl. Each recipe can be fine-tuned.
 - **Film and optical effects.** Clumped, luminance-weighted grain with dye-cloud colour, red halation, Pro-Mist bloom, vignette, chromatic aberration and four light-leak styles.
-- **Crop and straighten.** Aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), a Lightroom-style straighten dial with auto-fill, flips and 90° rotation.
+- **Pro editing tools.** Light (with histogram and Auto), Color, HSL Mixer, Color Grading wheels, point Curves and Detail (Texture, Clarity, Sharpen, Dehaze, HDR, Glow), with edge-aware detail that never draws halos. Save any combination as one of *My Looks*.
+- **Crop and straighten.** Aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), a Lightroom-style straighten dial, vertical and horizontal perspective, flips and 90° rotation. Pinch to zoom into the crop and drag it with two fingers.
+- **Compact editor.** A Lightroom-style bottom bar with a pull-up panel for tools with many sliders, soft haptic ticks on sliders, and one-tap Reset all.
 - **Undo and redo** for every change. A whole slider drag counts as one step.
 - **Re-edit any time.** Every developed photo stores its full recipe: original photo, look, sliders, effects, lens and crop. *Edit Again* picks up exactly where you left off.
 - **Frames and imprints.** Instant border, white border or a 35mm film scan with sprocket holes, plus a seven-segment LED date stamp in your choice of colour and format.
-- **Built-in gallery and viewer.** Browse by month and album, keep developed shots in their own tab, and pinch to zoom.
+- **Built-in gallery and viewer.** Browse by month and album, pinch to change the grid size, open photos from Google Photos, keep developed shots in their own tab, and pinch to zoom.
 - **Useful settings.** Film-texture strength, start with your last look, date stamp defaults, default frame, JPEG quality, export size, keep or strip location and camera data, grid size, screenshots filter and haptics.
 - **Fast, private and offline.** About 20–40&nbsp;ms per preview on a modern phone, and the same GPU pipeline renders the full-resolution export. Nothing is uploaded.
 

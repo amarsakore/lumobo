@@ -29,8 +29,8 @@ vec3 softClip(vec3 x) {
 """
 
     /**
-     * Extracts light for the glow passes. Mode 0: halation highlights, 1: bloom, 2: star /
-     * streak glints (only the brightest points), 3: the whole image (lens blur).
+     * Extracts light for the low-resolution passes.
+     * 0 halation highlights, 1 bloom, 2 star/streak glints, 3 whole image, 4 haze (min channel).
      */
     const val PREFILTER = """#version 300 es
 precision highp float;
@@ -39,30 +39,40 @@ out vec4 fragColor;
 uniform sampler2D uSrc;
 uniform vec3 uGain;
 uniform int uMode;
-uniform vec2 uPeak;   // neighbourhood radius in uv, for glint detection
+uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
 $COMMON
+// Glint detection works on the photo as shot (no exposure gain), so the star count stays
+// stable however much the exposure slider is pushed.
+float ringLuma(vec2 r, float lod) {
+    float s = 0.0;
+    for (int i = 0; i < 8; i++) {
+        float a = float(i) * 0.7853982 + 0.39;
+        s += dot(toLin(textureLod(uSrc, vUv + vec2(cos(a), sin(a)) * r, lod).rgb), LUMA);
+    }
+    return s / 8.0;
+}
 void main() {
     vec3 lin = toLin(texture(uSrc, vUv).rgb) * uGain;
     float l = dot(lin, LUMA);
-    float w;
-    if (uMode == 0) w = smoothstep(0.50, 0.98, l);
-    else if (uMode == 1) w = smoothstep(0.18, 0.95, l);
-    else if (uMode == 2) {
-        // Glints: bright AND brighter than the surroundings, so sparkles on water or
-        // street lamps make stars while big bright areas (sky, windows) don't smear.
-        float around = 0.0;
-        for (int i = 0; i < 8; i++) {
-            float a = float(i) * 0.7853982;
-            vec2 o = vec2(cos(a), sin(a)) * uPeak;
-            around += dot(toLin(textureLod(uSrc, vUv + o, 2.0).rgb) * uGain, LUMA);
-        }
-        around /= 8.0;
-        float peak = max(l - around, 0.0);
-        float k = smoothstep(0.6, 1.0, l) * smoothstep(0.02, 0.3, peak);
-        w = k * k * 3.0;
-    }
-    else w = 1.0;
-    fragColor = vec4(lin * w, 1.0);
+    if (uMode == 0) { fragColor = vec4(lin * smoothstep(0.50, 0.98, l), 1.0); return; }
+    if (uMode == 1) { fragColor = vec4(lin * smoothstep(0.18, 0.95, l), 1.0); return; }
+    if (uMode == 3) { fragColor = vec4(lin, 1.0); return; }
+    if (uMode == 4) { fragColor = vec4(vec3(min(lin.r, min(lin.g, lin.b))), 1.0); return; }
+    // Glints: a near-clipped point that is much brighter than both its immediate ring and the
+    // wider neighbourhood. Sun sparkles on water and street lamps qualify; a bright sky, a
+    // skylight roof or sunlit foliage do not, so they no longer explode into a mesh of rays.
+    float l0 = dot(toLin(texture(uSrc, vUv).rgb), LUMA);
+    float hot = smoothstep(0.70, 1.0, l0);
+    if (hot <= 0.0) { fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    l = l0;
+    // Small or medium highlight (brighter than a 1% or 2% ring) that does not sit inside a
+    // big bright region (checked with a 4.5% ring).
+    float r1 = ringLuma(uPeak * 0.6, 2.0);
+    float r2 = ringLuma(uPeak * 2.0, 3.0);
+    float r3 = ringLuma(uPeak * 4.2, 4.0);
+    float iso = smoothstep(0.18, 0.55, max(l - r1, l - r2));
+    float open = smoothstep(0.12, 0.45, l - r3);
+    fragColor = vec4(lin * hot * iso * open * 1.6, 1.0);
 }
 """
 
@@ -75,16 +85,16 @@ uniform vec2 uStep;
 uniform float uSigma;
 uniform int uRadius;
 void main() {
-    vec3 acc = vec3(0.0);
+    vec4 acc = vec4(0.0);
     float wsum = 0.0;
     float k = -1.0 / (2.0 * uSigma * uSigma);
     for (int i = -uRadius; i <= uRadius; i++) {
         float fi = float(i);
         float w = exp(fi * fi * k);
-        acc += texture(uTex, vUv + uStep * fi).rgb * w;
+        acc += texture(uTex, vUv + uStep * fi) * w;
         wsum += w;
     }
-    fragColor = vec4(acc / wsum, 1.0);
+    fragColor = acc / wsum;
 }
 """
 
@@ -99,14 +109,17 @@ uniform int uTaps;
 uniform float uDecay;
 uniform vec3 uTint;
 void main() {
+    // Density control: many glints (sunlit leaves, a skylight roof) -> proportionally fainter rays.
+    float mean = dot(textureLod(uTex, vec2(0.5), 12.0).rgb, vec3(0.3333));
+    float density = 1.0 / (1.0 + mean * 90.0);
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
         float w = exp(-fi * uDecay);
         acc += (texture(uTex, vUv + uDir * fi).rgb + texture(uTex, vUv - uDir * fi).rgb) * w;
     }
-    // Normalise by the kernel's total weight so rays carry the source's energy, not 30x it.
-    fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint, 1.0);
+    // Normalise by the kernel's total weight so rays carry the source's energy.
+    fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint * density, 1.0);
 }
 """
 
@@ -121,17 +134,44 @@ uniform sampler3D uLut;
 uniform sampler2D uGrain;
 uniform sampler2D uHal;
 uniform sampler2D uBloom;
-uniform sampler2D uLensBlur;
+uniform sampler2D uLocal;
 uniform sampler2D uStarTex;
+uniform sampler2D uWide;
+uniform sampler2D uHaze;
+uniform sampler2D uCurve;
 
 uniform float uLutSize;
 uniform float uIntensity;
 uniform vec3 uGain;
+// light
 uniform float uContrast;
-uniform float uSaturation;
-uniform float uFade;
 uniform float uHighlights;
 uniform float uShadows;
+uniform float uWhites;
+uniform float uBlacks;
+uniform float uFade;
+// colour
+uniform float uSaturation;
+uniform float uVibrance;
+uniform float uMixerOn;
+uniform vec3 uMixer[8];
+uniform float uGradeOn;
+uniform vec2 uGradeS;
+uniform vec2 uGradeM;
+uniform vec2 uGradeH;
+uniform float uBalance;
+uniform float uBlending;
+uniform float uCurveOn;
+// detail
+uniform float uTexture;
+uniform float uClarity;
+uniform float uDehaze;
+uniform float uSharpen;
+uniform float uHdr;
+uniform float uGlow;
+uniform float uTexLod;
+uniform float uSharpLod;
+// film & optics
 uniform float uHalation;
 uniform vec3 uHalColor;
 uniform float uBloomAmt;
@@ -144,10 +184,13 @@ uniform float uColorGrain;
 uniform vec2 uAspect;
 uniform vec2 uRes;
 uniform float uSeed;
+// geometry
 uniform vec4 uSrcRect;     // crop origin (xy) and size (zw), in the displayed image
 uniform int uRot;          // quarter turns clockwise
+uniform float uGeoOn;
 uniform float uAngle;      // straighten, radians
 uniform float uFillScale;
+uniform vec2 uKeystone;    // perspective (horizontal, vertical)
 uniform float uDispAspect; // displayed (quarter-rotated) width / height
 uniform vec2 uFlip;
 uniform int uLeakStyle;
@@ -162,14 +205,37 @@ uniform float uSoft;
 uniform float uSwirl;
 $COMMON
 
-// Output (frame) uv -> source texture uv, through crop, straighten, flip, then rotation.
+const float BAND_HUES[8] = float[8](29.0, 58.0, 108.0, 142.0, 195.0, 264.0, 296.0, 333.0);
+
+vec3 linToOklab(vec3 c) {
+    c = max(c, 0.0);
+    float l = pow(0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b, 1.0 / 3.0);
+    float m = pow(0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b, 1.0 / 3.0);
+    float s = pow(0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b, 1.0 / 3.0);
+    return vec3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
+}
+vec3 oklabToLin(vec3 o) {
+    float l = o.x + 0.3963377774 * o.y + 0.2158037573 * o.z;
+    float m = o.x - 0.1055613458 * o.y - 0.0638541728 * o.z;
+    float s = o.x - 0.0894841775 * o.y - 1.2914855480 * o.z;
+    l = l * l * l; m = m * m * m; s = s * s * s;
+    return vec3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+               -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+               -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+float hueDiff(float a, float b) { return mod(a - b + 540.0, 360.0) - 180.0; }
+
+// Output (frame) uv -> source texture uv, through crop, straighten, perspective, flip, rotation.
 vec2 srcUv(vec2 uv) {
     vec2 r = uSrcRect.xy + uv * uSrcRect.zw;
-    if (uAngle != 0.0) {
-        vec2 p = (r - 0.5) * vec2(uDispAspect, 1.0);
+    if (uGeoOn > 0.5) {
+        vec2 p = (r - 0.5) * vec2(uDispAspect, 1.0) / uFillScale;
         float c = cos(uAngle);
         float s = sin(uAngle);
-        p = mat2(c, s, -s, c) * p / uFillScale;
+        p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+        p /= 1.0 + uKeystone.x * p.x + uKeystone.y * p.y;
         r = p / vec2(uDispAspect, 1.0) + 0.5;
     }
     if (uFlip.x > 0.5) r.x = 1.0 - r.x;
@@ -193,9 +259,7 @@ vec2 lensUv(vec2 uv, out float mask) {
         float R = 0.5 * min(uAspect.x, uAspect.y);
         float rn = r / R;
         mask = 1.0 - smoothstep(0.985, 1.0, rn);
-        // Fill the circle with the whole frame: the rim maps to the frame edge in each direction.
         vec2 dir = p / r;
-        // Smooth (superellipse) boundary instead of a hard rectangle, so lines don't crease.
         vec2 q = abs(dir) / (0.5 * uAspect);
         float rmax = 1.0 / pow(pow(q.x, 4.0) + pow(q.y, 4.0), 0.25);
         rs = tan(a * min(rn, 1.0)) / tan(a) * rmax;
@@ -225,22 +289,126 @@ float blob(vec2 uv, vec2 c, vec2 s, float k) {
     vec2 d = (uv - c) * s;
     return exp(-dot(d, d) * k);
 }
+float srgbLuma(vec3 lin) { return dot(toSrgb(lin), LUMA); }
+// Edge-aware detail: full strength on texture, tapering at strong edges (|d| >> k) so
+// sharpening and clarity never draw glowing halos along outlines. Peaks at k / 2.
+float tame(float d, float k) { return d / (1.0 + (d * d) / (k * k)); }
 
-// Film colour: exposure/WB in linear, LUT, then the user's tone sliders. sRGB in, sRGB out.
-vec3 grade(vec3 src) {
+// Detail, film colour and the user's tone/colour tools. sRGB in, sRGB out.
+vec3 grade(vec3 src, vec2 suv, bool detail) {
     vec3 lin = toLin(src) * uGain;
     if (max(uGain.r, max(uGain.g, uGain.b)) > 1.001) lin = softClip(lin);
+
+    // Dehaze: remove (or add) the veil estimated from the blurred dark channel.
+    if (uDehaze > 0.0) {
+        // Never remove more veil than the pixel itself holds (its darkest channel), so
+        // shadows keep their detail instead of crushing to black.
+        float mn = min(lin.r, min(lin.g, lin.b));
+        float t = min(clamp(uDehaze * texture(uHaze, suv).r * 0.95, 0.0, 0.85), mn * 0.85);
+        lin = max(lin - t, 0.0) / (1.0 - t);
+    } else if (uDehaze < 0.0) {
+        lin = mix(lin, vec3(0.62), -uDehaze * 0.42);
+    }
     vec3 c = clamp(toSrgb(lin), 0.0, 1.0);
+
+    // Local contrast family, on luminance so colours don't fringe.
+    if (detail) {
+        float y = dot(c, LUMA);
+        float dy = 0.0;
+        if (uTexture != 0.0) {
+            float yb = srgbLuma(toLin(textureLod(uSrc, suv, uTexLod).rgb) * uGain);
+            dy += uTexture * 2.0 * tame(y - yb, 0.10);
+        }
+        if (uSharpen > 0.0) {
+            float yb = srgbLuma(toLin(textureLod(uSrc, suv, uSharpLod).rgb) * uGain);
+            // Sharpen real edges and texture only: flat areas (sky, skin) keep their noise down.
+            float dd = y - yb;
+            dy += uSharpen * 2.6 * tame(dd, 0.06) * smoothstep(0.004, 0.025, abs(dd));
+        }
+        if (uClarity != 0.0) {
+            float yb = srgbLuma(texture(uLocal, suv).rgb);
+            float mid = 1.0 - pow(abs(2.0 * y - 1.0), 2.0);
+            dy += uClarity * 1.5 * tame(y - yb, 0.14) * (0.35 + 0.65 * mid);
+        }
+        if (uHdr != 0.0) {
+            float yw = srgbLuma(texture(uWide, suv).rgb);
+            dy += uHdr * (1.4 * tame(y - yw, 0.18) + 0.30 * (0.48 - yw));
+        }
+        if (dy != 0.0) c = clamp(c + dy, 0.0, 1.0);
+        if (uDehaze > 0.0) {
+            float yy = dot(c, LUMA);
+            c = clamp(mix(vec3(yy), c, 1.0 + uDehaze * 0.25), 0.0, 1.0);
+        }
+    }
+
+    // Film colour: baked 3D LUT.
     vec3 film = texture(uLut, c * ((uLutSize - 1.0) / uLutSize) + 0.5 / uLutSize).rgb;
     c = mix(c, film, uIntensity);
+
+    // Light.
     if (uContrast != 0.0) c = sCurve(clamp(c, 0.0, 1.0), 1.0 + uContrast * (uContrast > 0.0 ? 0.6 : 0.4));
     float l = dot(c, LUMA);
     c += uShadows * 0.12 * bump(l, 0.0, 0.5) + uHighlights * 0.12 * bump(l, 0.5, 1.0);
+    if (uWhites != 0.0 || uBlacks != 0.0) {
+        float bp = -uBlacks * 0.10;
+        float wp = 1.0 - uWhites * 0.16;
+        c = (c - bp) / (wp - bp);
+    }
+    c = clamp(c, 0.0, 1.0);
+
+    // Point curves (master + channels baked into one RGB lookup).
+    if (uCurveOn > 0.5) {
+        vec3 t = c * (255.0 / 256.0) + 0.5 / 256.0;
+        c = vec3(texture(uCurve, vec2(t.r, 0.5)).r, texture(uCurve, vec2(t.g, 0.5)).g, texture(uCurve, vec2(t.b, 0.5)).b);
+    }
+
+    // Vibrance protects already-saturated colours and skin; saturation is uniform.
+    if (uVibrance != 0.0) {
+        float mx = max(c.r, max(c.g, c.b));
+        float mn = min(c.r, min(c.g, c.b));
+        float skin = clamp((c.r - c.g) * 5.0, 0.0, 1.0) * clamp((c.g - c.b) * 5.0, 0.0, 1.0);
+        float amt = uVibrance * (1.0 - (mx - mn)) * (uVibrance > 0.0 ? 1.0 - 0.6 * skin : 1.0);
+        float y = dot(c, LUMA);
+        c = mix(vec3(y), c, 1.0 + amt);
+    }
     if (uSaturation != 0.0) {
         float y = dot(c, LUMA);
         c = mix(vec3(y), c, 1.0 + uSaturation);
     }
     c = clamp(c, 0.0, 1.0);
+
+    // Colour mixer and grading in OKLab (perceptually even hue bands, no fringing).
+    if (uMixerOn > 0.5 || uGradeOn > 0.5) {
+        vec3 o = linToOklab(toLin(c));
+        if (uMixerOn > 0.5) {
+            float C = length(o.yz);
+            float h = degrees(atan(o.z, o.y));
+            float cw = smoothstep(0.0, 0.05, C);
+            vec3 acc = vec3(0.0);
+            for (int i = 0; i < 8; i++) {
+                float d = hueDiff(h, BAND_HUES[i]);
+                float nb = d >= 0.0 ? BAND_HUES[(i + 1) % 8] : BAND_HUES[(i + 7) % 8];
+                float span = abs(hueDiff(nb, BAND_HUES[i]));
+                float t = clamp(abs(d) / span, 0.0, 1.0);
+                float w = cos(1.5707963 * t);
+                acc += uMixer[i] * w * w;
+            }
+            h += acc.x * 32.0 * cw;
+            C *= max(0.0, 1.0 + acc.y * cw);
+            o.x += acc.z * 0.14 * cw;
+            o.yz = C * vec2(cos(radians(h)), sin(radians(h)));
+        }
+        if (uGradeOn > 0.5) {
+            float L = o.x;
+            float bal = uBalance * 0.18;
+            float bw = 0.06 + uBlending * 0.30;
+            float ms = 1.0 - smoothstep(0.42 + bal - bw, 0.42 + bal + bw, L);
+            float mh = smoothstep(0.72 + bal - bw, 0.72 + bal + bw, L);
+            float mm = clamp(1.0 - ms - mh, 0.0, 1.0);
+            o.yz += uGradeS * ms + uGradeM * mm + uGradeH * mh;
+        }
+        c = clamp(toSrgb(oklabToLin(o)), 0.0, 1.0);
+    }
     return c * (1.0 - uFade * 0.10) + uFade * 0.075;
 }
 
@@ -260,7 +428,7 @@ void main() {
     } else {
         src = texture(uSrc, suv).rgb;
     }
-    vec3 c = grade(src);
+    vec3 c = grade(src, suv, true);
 
     // Lens blur: tilt-shift band, soft-focus diffusion, swirling edges.
     if (uTilt > 0.0 || uSoft > 0.0 || uSwirl > 0.0) {
@@ -282,13 +450,13 @@ void main() {
                 float cs = cos(ang);
                 float sn = sin(ang);
                 vec2 q = mat2(cs, sn, -sn, cs) * p;
-                acc += texture(uLensBlur, srcUv(0.5 + q / uAspect)).rgb;
+                acc += texture(uLocal, srcUv(0.5 + q / uAspect)).rgb;
             }
             bl = acc / 7.0;
         } else {
-            bl = texture(uLensBlur, suv).rgb;
+            bl = texture(uLocal, suv).rgb;
         }
-        if (m > 0.0) c = mix(c, grade(toSrgb(bl)), clamp(m, 0.0, 1.0));
+        if (m > 0.0) c = mix(c, grade(toSrgb(bl), suv, false), clamp(m, 0.0, 1.0));
         if (uTilt > 0.0) {
             float y = dot(c, LUMA);
             c = clamp(mix(vec3(y), c, 1.0 + 0.18 * uTilt), 0.0, 1.0);
@@ -297,6 +465,11 @@ void main() {
 
     // Optics in linear light.
     vec3 lin = toLin(c);
+    if (uGlow > 0.0) {
+        vec3 wb = texture(uWide, suv).rgb;
+        vec3 g = wb * smoothstep(0.04, 0.9, dot(wb, LUMA)) * 1.25;
+        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(g * uGlow, 0.0, 1.0));
+    }
     if (uBloomAmt > 0.0) {
         vec3 b = texture(uBloom, suv).rgb;
         lin = 1.0 - (1.0 - lin) * (1.0 - clamp(b * uBloomAmt * 1.4, 0.0, 1.0));
@@ -307,7 +480,7 @@ void main() {
     }
     if (uStar > 0.0) {
         vec3 st = texture(uStarTex, suv).rgb;
-        lin = 1.0 - (1.0 - lin) * (1.0 - clamp(st * uStar, 0.0, 1.0));
+        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(st, 0.0, 1.0));
     }
     if (uLeak > 0.0) {
         vec3 leak;

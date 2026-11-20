@@ -40,10 +40,22 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Camera
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.ColorLens
+import androidx.compose.material.icons.outlined.Details
+import androidx.compose.material.icons.outlined.Gradient
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.WbSunny
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material.icons.outlined.Flip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import app.lumobo.film.LensPreset
+import app.lumobo.ui.components.panelScroll
 import app.lumobo.ui.components.AngleDial
 import androidx.compose.material.icons.outlined.Compare
 import androidx.compose.material.icons.outlined.Crop
@@ -59,6 +71,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,11 +119,38 @@ import app.lumobo.ui.components.ZoomableImage
 import app.lumobo.ui.theme.Palette
 import app.lumobo.ui.theme.Type
 import kotlinx.coroutines.delay
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class Panel(val label: String) { FILMS("Films"), ADJUST("Adjust"), EFFECTS("Effects"), LENS("Lens"), CROP("Crop"), FRAME("Frame") }
+internal enum class Tool(val label: String, val icon: ImageVector) {
+    FILMS("Films", Icons.Outlined.FilterVintage),
+    LOOKS("My Looks", Icons.Outlined.Bookmarks),
+    LIGHT("Light", Icons.Outlined.WbSunny),
+    COLOR("Color", Icons.Outlined.ColorLens),
+    MIXER("Mixer", Icons.Outlined.Tune),
+    GRADING("Grading", Icons.Outlined.Gradient),
+    CURVES("Curves", Icons.AutoMirrored.Outlined.ShowChart),
+    DETAIL("Detail", Icons.Outlined.Details),
+    EFFECTS("Effects", Icons.Outlined.Grain),
+    LENS("Lens", Icons.Outlined.Camera),
+    CROP("Crop", Icons.Outlined.Crop),
+    FRAME("Frame", Icons.Outlined.CropFree),
+}
+
+private val PRIMARY = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.CROP)
+
+/** Tools whose panel can be pulled up to show every control at once. */
+private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP)
+private val PANEL_H = 216.dp
 
 @Composable
 fun EditorScreen(
@@ -130,13 +170,23 @@ fun EditorScreen(
     }
     BackHandler(onBack = onBack)
 
-    var panel by rememberSaveable { mutableStateOf(Panel.FILMS) }
+    var panel by rememberSaveable { mutableStateOf(Tool.FILMS) }
+    var drawer by remember { mutableStateOf(false) }
+    val sheetState = remember { app.lumobo.ui.components.PanelSheet() }
     var comparing by remember { mutableStateOf(false) }
     var straightening by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<Pair<String, Uri?>?>(null) }
+    // What a just-picked film does, shown briefly over the photo.
+    var filmNote by remember { mutableStateOf<FilmProfile?>(null) }
+    LaunchedEffect(filmNote) {
+        if (filmNote != null) {
+            delay(2400)
+            filmNote = null
+        }
+    }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(panel) { editor.setCropping(panel == Panel.CROP) }
+    LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP) }
     LaunchedEffect(Unit) { if (note != null) toast = note to null }
     LaunchedEffect(toast) {
         if (toast != null) {
@@ -148,19 +198,22 @@ fun EditorScreen(
     Column(Modifier.fillMaxSize().background(Palette.Bg)) {
         // ── Top bar
         Row(
-            Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RoundIconButton(Icons.AutoMirrored.Outlined.ArrowBack, "Back", onBack)
-            Spacer(Modifier.width(6.dp))
-            RoundIconButton(
-                Icons.AutoMirrored.Outlined.Undo, "Undo", { editor.undo() },
-                Modifier.size(36.dp).alpha(if (editor.canUndo) 1f else 0.35f),
-            )
+            RoundIconButton(Icons.AutoMirrored.Outlined.ArrowBack, "Back", onBack, Modifier.size(34.dp))
             Spacer(Modifier.width(4.dp))
             RoundIconButton(
+                Icons.AutoMirrored.Outlined.Undo, "Undo", { editor.undo() },
+                Modifier.size(34.dp).alpha(if (editor.canUndo) 1f else 0.35f), background = Color.Transparent,
+            )
+            RoundIconButton(
                 Icons.AutoMirrored.Outlined.Redo, "Redo", { editor.redo() },
-                Modifier.size(36.dp).alpha(if (editor.canRedo) 1f else 0.35f),
+                Modifier.size(34.dp).alpha(if (editor.canRedo) 1f else 0.35f), background = Color.Transparent,
+            )
+            RoundIconButton(
+                Icons.Outlined.RestartAlt, "Reset all changes", { editor.resetAll() },
+                Modifier.size(34.dp).alpha(if (editor.canUndo || editor.profile.id != "original") 1f else 0.35f), background = Color.Transparent,
             )
             Column(Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Crossfade(editor.profile, label = "title") { p ->
@@ -175,7 +228,7 @@ fun EditorScreen(
             }
             Box(
                 Modifier
-                    .size(42.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
                     .background(if (comparing) Palette.Amber else Palette.Surface2)
                     .pointerInput(Unit) {
@@ -187,17 +240,17 @@ fun EditorScreen(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Outlined.Compare, "Hold to compare", tint = if (comparing) Palette.Bg else Palette.Text, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.Compare, "Hold to compare", tint = if (comparing) Palette.Bg else Palette.Text, modifier = Modifier.size(18.dp))
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
             Box(
                 Modifier
-                    .height(42.dp)
-                    .width(80.dp)
+                    .height(34.dp)
+                    .width(68.dp)
                     .clip(RoundedCornerShape(50))
                     .background(Palette.Amber)
                     .clickable(enabled = !editor.saving && editor.status == EditorStatus.Ready) {
-                        panel = if (panel == Panel.CROP) Panel.FILMS else panel
+                        panel = if (panel == Tool.CROP) Tool.FILMS else panel
                         scope.launch {
                             val r = editor.save()
                             toast = r.fold(
@@ -214,7 +267,7 @@ fun EditorScreen(
                 if (editor.saving) {
                     CircularProgressIndicator(color = Palette.Bg, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
                 } else {
-                    Text(if (target != null) "UPDATE" else "SAVE", color = Palette.Bg, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 1.2.sp)
+                    Text(if (target != null) "UPDATE" else "SAVE", color = Palette.Bg, fontWeight = FontWeight.Black, fontSize = 12.sp, letterSpacing = 1.sp)
                 }
             }
         }
@@ -225,7 +278,7 @@ fun EditorScreen(
                 EditorStatus.Loading -> CircularProgressIndicator(color = Palette.Amber, strokeWidth = 2.dp)
                 is EditorStatus.Failed -> Text(s.message, style = Type.Body, textAlign = TextAlign.Center, modifier = Modifier.padding(32.dp))
                 EditorStatus.Ready -> {
-                    if (panel == Panel.CROP) {
+                    if (panel == Tool.CROP) {
                         val (sw, sh) = editor.sourceSize
                         val expected = GlRenderer.outputSize(sw, sh, editor.geo.uncropped())
                         val img = editor.rendered
@@ -235,14 +288,35 @@ fun EditorScreen(
                             CircularProgressIndicator(color = Palette.Amber, strokeWidth = 2.dp)
                         }
                     } else {
-                        val shown: ImageBitmap? = if (comparing) editor.original else (editor.rendered ?: editor.original)
+                        val shown: ImageBitmap? = when {
+                            comparing -> editor.original
+                            else -> editor.rendered ?: editor.original
+                        }
                         if (shown != null) {
                             ZoomableImage(
                                 bitmap = shown,
-                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
                                 resetKey = Triple(editor.fx.frame, editor.geo, panel),
                                 onHold = { comparing = it },
                             )
+                        }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = filmNote != null && !comparing,
+                            enter = fadeIn(), exit = fadeOut(),
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp, start = 24.dp, end = 24.dp),
+                        ) {
+                            val n = filmNote
+                            Column(
+                                Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.62f))
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(n?.name.orEmpty(), style = Type.Title.copy(fontSize = 13.sp))
+                                Text(
+                                    n?.blurb.orEmpty(), style = Type.Body.copy(color = Palette.Text.copy(alpha = 0.8f), fontSize = 11.5.sp, lineHeight = 15.sp),
+                                    textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         if (comparing) {
                             Text(
@@ -287,56 +361,183 @@ fun EditorScreen(
             }
         }
 
-        // ── Control panel
+        // ── Control panel. Pull a tool's panel up to see all of its controls; pull the
+        // handle on Films (or the tab bar) up for every tool.
+        // Panels are as tall as their controls (up to PANEL_H). One that has more controls
+        // than fit can be pulled up until all of them show; pull down to shrink it again.
+        val canExpand = !drawer && panel !in FIXED && sheetState.overflow
+        val open = !drawer && sheetState.open
+        val sheet = rememberPanelSheet(
+            canExpand = { !drawer && panel !in FIXED && sheetState.overflow },
+            isExpanded = { sheetState.open },
+            onExpand = { sheetState.expanded = it },
+        )
+        val dragAcc = remember { floatArrayOf(0f) }
+        fun verticalDrag(onUp: () -> Unit, onDown: () -> Unit) = Modifier.pointerInput(Unit) {
+            detectVerticalDragGestures(onDragStart = { dragAcc[0] = 0f }) { ch, dy ->
+                dragAcc[0] += dy
+                if (dragAcc[0] < -36f) { onUp(); dragAcc[0] = 0f; ch.consume() }
+                else if (dragAcc[0] > 36f) { onDown(); dragAcc[0] = 0f; ch.consume() }
+            }
+        }
+        fun expandable() = !drawer && panel !in FIXED && sheetState.overflow
+        val handleDrag = verticalDrag(
+            onUp = { if (expandable()) sheetState.expanded = true else drawer = true },
+            onDown = { if (drawer) drawer = false else sheetState.expanded = false },
+        )
+        val tabDrag = verticalDrag(onUp = { drawer = true }, onDown = { if (drawer) drawer = false else sheetState.expanded = false })
+        val bodyDrag = verticalDrag(
+            onUp = { if (expandable()) sheetState.expanded = true },
+            onDown = { sheetState.expanded = false },
+        )
+        val maxPanel = (LocalConfiguration.current.screenHeightDp * 0.58f).dp
         Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
-            Box(Modifier.fillMaxWidth().height(268.dp)) {
-                when (panel) {
-                    Panel.FILMS -> FilmsPanel(editor)
-                    Panel.ADJUST -> AdjustPanel(editor)
-                    Panel.EFFECTS -> EffectsPanel(editor)
-                    Panel.LENS -> LensPanel(editor)
-                    Panel.CROP -> CropPanel(editor) { straightening = it }
-                    Panel.FRAME -> FramePanel(editor)
+            Box(
+                Modifier.fillMaxWidth().height(14.dp).then(handleDrag)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        if (expandable()) sheetState.expanded = !sheetState.open else drawer = !drawer
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier.width(32.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+                        .background(if (drawer || open) Palette.Amber else if (canExpand) Palette.TextFaint else Palette.Surface3),
+                )
+            }
+            Box(
+                Modifier.fillMaxWidth()
+                    .heightIn(max = if (open) maxPanel else PANEL_H)
+                    .animateContentSize()
+                    .nestedScroll(sheet)
+                    .then(bodyDrag),
+            ) {
+              CompositionLocalProvider(app.lumobo.ui.components.LocalPanelSheet provides sheetState) {
+                Crossfade(drawer, label = "drawer") { showGrid ->
+                    if (showGrid) {
+                        ToolGrid(panel, onPick = { panel = it; drawer = false }, onResetAll = { editor.resetAll(); drawer = false })
+                    } else when (panel) {
+                        Tool.FILMS -> FilmsPanel(editor, onPicked = { filmNote = if (it.isIdentity) null else it }) { panel = Tool.LOOKS }
+                        Tool.LOOKS -> LooksPanel(editor)
+                        Tool.LIGHT -> LightPanel(editor)
+                        Tool.COLOR -> ColorPanel(editor)
+                        Tool.MIXER -> MixerPanel(editor)
+                        Tool.GRADING -> GradingPanel(editor)
+                        Tool.CURVES -> CurvesPanel(editor)
+                        Tool.DETAIL -> DetailPanel(editor)
+                        Tool.EFFECTS -> EffectsPanel(editor)
+                        Tool.LENS -> LensPanel(editor)
+                        Tool.CROP -> CropPanel(editor) { straightening = it }
+                        Tool.FRAME -> FramePanel(editor)
+                    }
                 }
+              }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Line))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                BottomTab(Icons.Outlined.FilterVintage, Panel.FILMS.label, panel == Panel.FILMS, { panel = Panel.FILMS }, Modifier.weight(1f))
-                BottomTab(Icons.Outlined.Tune, Panel.ADJUST.label, panel == Panel.ADJUST, { panel = Panel.ADJUST }, Modifier.weight(1f))
-                BottomTab(Icons.Outlined.Grain, Panel.EFFECTS.label, panel == Panel.EFFECTS, { panel = Panel.EFFECTS }, Modifier.weight(1f))
-                BottomTab(Icons.Outlined.Camera, Panel.LENS.label, panel == Panel.LENS, { panel = Panel.LENS }, Modifier.weight(1f))
-                BottomTab(Icons.Outlined.Crop, Panel.CROP.label, panel == Panel.CROP, { panel = Panel.CROP }, Modifier.weight(1f))
-                BottomTab(Icons.Outlined.CropFree, Panel.FRAME.label, panel == Panel.FRAME, { panel = Panel.FRAME }, Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp).then(tabDrag), horizontalArrangement = Arrangement.SpaceEvenly) {
+                PRIMARY.forEach { t ->
+                    BottomTab(t.icon, t.label, !drawer && panel == t, { panel = t; drawer = false }, Modifier.weight(1f))
+                }
+                val other = panel !in PRIMARY
+                BottomTab(
+                    if (other && !drawer) panel.icon else Icons.Outlined.Apps,
+                    if (other && !drawer) panel.label else "More",
+                    drawer || other, { drawer = !drawer }, Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Bottom-sheet behaviour for tool panels: dragging the controls up first grows the panel
+ * (until every slider shows), and pulling down at the top of the list shrinks it again.
+ */
+@Composable
+private fun rememberPanelSheet(
+    canExpand: () -> Boolean,
+    isExpanded: () -> Boolean,
+    onExpand: (Boolean) -> Unit,
+): NestedScrollConnection {
+    val can by rememberUpdatedState(canExpand)
+    val exp by rememberUpdatedState(isExpanded)
+    val set by rememberUpdatedState(onExpand)
+    return remember {
+        object : NestedScrollConnection {
+            var acc = 0f
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y >= 0f || !can() || exp()) return Offset.Zero
+                acc = minOf(acc, 0f) + available.y
+                if (acc < -36f) { set(true); acc = 0f }
+                return Offset(0f, available.y)
+            }
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || available.y <= 0f || !exp()) return Offset.Zero
+                acc = maxOf(acc, 0f) + available.y
+                if (acc > 48f) { set(false); acc = 0f }
+                return Offset(0f, available.y)
+            }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                acc = 0f
+                return Velocity.Zero
             }
         }
     }
 }
 
 @Composable
-private fun FilmsPanel(editor: EditorController) {
-    var category by rememberSaveable { mutableStateOf(editor.profile.category ?: Category.VIBES) }
-    val films = remember(category) { listOf(Profiles.ORIGINAL) + Profiles.all.filter { it.category == category } }
-    val p = editor.profile
-    Column(Modifier.fillMaxSize().padding(top = 10.dp)) {
-        // Description (always shown in full) + strength
-        Column(Modifier.height(86.dp)) {
-            Text(
-                if (p.isIdentity) "Pick a film below. Hold the image to compare with the original." else p.blurb,
-                style = Type.Body.copy(fontSize = 12.5.sp, lineHeight = 16.sp),
-                maxLines = 2,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            if (!p.isIdentity) {
-                FilmSlider(
-                    "Strength", editor.adj.intensity, { editor.updateAdj(editor.adj.copy(intensity = it)) },
-                    min = 0f, max = 1f, default = 1f, format = { "${(it * 100).roundToInt()}%" },
-                )
+private fun ToolGrid(current: Tool, onPick: (Tool) -> Unit, onResetAll: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp)) {
+        Text("MORE TOOLS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold, fontSize = 10.sp), modifier = Modifier.padding(start = 10.dp, bottom = 2.dp))
+        // Only what the bottom bar doesn't already have.
+        val cells: List<Tool?> = Tool.entries.filter { it !in PRIMARY } + listOf(null)
+        cells.chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { t ->
+                    val sel = t == current
+                    Column(
+                        Modifier.weight(1f).height(44.dp).padding(2.dp).clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) Palette.Surface3 else Color.Transparent)
+                            .clickable { if (t == null) onResetAll() else onPick(t) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(t?.icon ?: Icons.Outlined.RestartAlt, null, tint = if (sel) Palette.Amber else if (t == null) Palette.Red else Palette.Text, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.height(3.dp))
+                        Text(t?.label ?: "Reset all", fontSize = 10.5.sp, color = if (sel) Palette.Amber else Palette.TextDim, maxLines = 1)
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(Category.entries) { c -> Chip(c.label, c == category, { category = c }) }
+    }
+}
+
+@Composable
+private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit, onLooks: () -> Unit) {
+    var category by rememberSaveable { mutableStateOf(editor.profile.category ?: editor.lastCategory ?: Category.VIBES) }
+    LaunchedEffect(category) { editor.prefetch(category) }
+    val films = remember(category) { listOf(Profiles.ORIGINAL) + Profiles.all.filter { it.category == category } }
+    val p = editor.profile
+    // Tap the selected film again to dial its strength (in place of the category row).
+    var strengthOpen by remember { mutableStateOf(false) }
+    val strength = strengthOpen && !p.isIdentity
+    Column(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 10.dp)) {
+        Box(Modifier.fillMaxWidth().height(40.dp), contentAlignment = Alignment.CenterStart) {
+            Crossfade(strength, label = "strength") { dial ->
+                if (dial) {
+                    FilmSlider(
+                        "${p.name} strength", editor.adj.intensity, { editor.updateAdj(editor.adj.copy(intensity = it)) },
+                        min = 0f, max = 1f, default = 1f, format = { "${(it * 100).roundToInt()}%" },
+                    )
+                } else {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { AddLookChip(onLooks) }
+                        items(Category.entries) { c -> Chip(c.label, c == category, { category = c }) }
+                    }
+                }
+            }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(6.dp))
         val listState = rememberLazyListState()
         LaunchedEffect(category) {
             val i = films.indexOfFirst { it.id == p.id }
@@ -348,18 +549,27 @@ private fun FilmsPanel(editor: EditorController) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(films, key = { it.id }) { f ->
-                FilmCard(f, editor.thumbs[f.id], f.id == p.id) { editor.select(f) }
+                val selected = f.id == p.id
+                FilmCard(f, editor.thumbs[f.id], selected, adjustable = selected && !f.isIdentity && !strength) {
+                    if (selected) {
+                        if (!f.isIdentity) strengthOpen = !strength
+                    } else {
+                        editor.select(f)
+                        strengthOpen = false
+                        onPicked(f)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(76.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, adjustable: Boolean, onClick: () -> Unit) {
+    Column(Modifier.width(74.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(76.dp)
+                .size(74.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(Palette.Surface2)
                 .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Amber else Color.Transparent, RoundedCornerShape(14.dp)),
@@ -374,10 +584,17 @@ private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolea
             ) {
                 Text(profile.code, style = Type.Code.copy(color = if (selected) Palette.Amber else Palette.Text))
             }
+            if (adjustable) {
+                // Hint: tap again for strength.
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(5.dp).size(20.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.Tune, "Adjust strength", tint = Palette.Amber, modifier = Modifier.size(13.dp)) }
+            }
         }
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
-            profile.name, fontSize = 10.5.sp, lineHeight = 12.5.sp, maxLines = 2, textAlign = TextAlign.Center,
+            profile.name, fontSize = 10.5.sp, lineHeight = 12.sp, maxLines = 2, textAlign = TextAlign.Center,
             color = if (selected) Palette.Text else Palette.TextDim,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )
@@ -397,31 +614,13 @@ private fun PanelHeader(title: String, onReset: () -> Unit) {
 }
 
 @Composable
-private fun AdjustPanel(editor: EditorController) {
-    val a = editor.adj
-    Column(Modifier.fillMaxSize()) {
-        PanelHeader("Adjust", editor::resetAdjustments)
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 8.dp)) {
-            FilmSlider("Exposure", a.exposure, { editor.updateAdj(a.copy(exposure = it)) }, format = { String.format(Locale.US, "%+.1f EV", it * 2f) })
-            FilmSlider("Contrast", a.contrast, { editor.updateAdj(a.copy(contrast = it)) })
-            FilmSlider("Highlights", a.highlights, { editor.updateAdj(a.copy(highlights = it)) })
-            FilmSlider("Shadows", a.shadows, { editor.updateAdj(a.copy(shadows = it)) })
-            FilmSlider("Warmth", a.temp, { editor.updateAdj(a.copy(temp = it)) })
-            FilmSlider("Tint", a.tint, { editor.updateAdj(a.copy(tint = it)) })
-            FilmSlider("Saturation", a.saturation, { editor.updateAdj(a.copy(saturation = it)) })
-            FilmSlider("Fade", a.fade, { editor.updateAdj(a.copy(fade = it)) }, min = 0f, max = 1f, default = 0f)
-        }
-    }
-}
-
-@Composable
 private fun EffectsPanel(editor: EditorController) {
     val f = editor.fx
     val context = LocalContext.current
     val d = remember(editor.profile) { AppSettings.get(context).effectsFor(editor.profile) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxWidth()) {
         PanelHeader("Film & lens", editor::resetEffects)
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 8.dp)) {
+        Column(Modifier.panelScroll().padding(bottom = 8.dp)) {
             FilmSlider("Grain", f.grain, { editor.updateFx(f.copy(grain = it)) }, min = 0f, max = 1f, default = d.grain)
             FilmSlider("Grain size", f.grainSize, { editor.updateFx(f.copy(grainSize = it)) }, min = 0f, max = 1f, default = d.grainSize, enabled = f.grain > 0f)
             FilmSlider("Colour grain", f.colorGrain, { editor.updateFx(f.copy(colorGrain = it)) }, min = 0f, max = 1f, default = d.colorGrain, enabled = f.grain > 0f && !editor.profile.isMono)
@@ -450,31 +649,45 @@ private fun CropPanel(editor: EditorController, onStraightening: (Boolean) -> Un
     val g = editor.geo
     val (sw, sh) = editor.sourceSize
     fun rotated(rot: Int) = CropMath.rotatedSize(sw, sh, rot)
-    Column(Modifier.fillMaxSize().padding(top = 4.dp)) {
+    Column(Modifier.fillMaxWidth().panelScroll().padding(top = 2.dp)) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("CROP & STRAIGHTEN", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
+            Text("CROP", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold), modifier = Modifier.weight(1f))
             RoundIconButton(Icons.Outlined.Rotate90DegreesCw, "Rotate 90°", {
                 val rot = (g.rotation + 1) % 4
                 val (rw, rh) = rotated(rot)
                 editor.updateGeo(CropMath.centered(rot, g.aspect, rw, rh, g.copy(rotation = rot, left = 0f, top = 0f, right = 1f, bottom = 1f)))
-            }, Modifier.size(38.dp))
+            }, Modifier.size(32.dp))
             Spacer(Modifier.width(6.dp))
-            RoundIconButton(Icons.Outlined.Flip, "Flip horizontal", { editor.updateGeo(g.copy(flipH = !g.flipH)) }, Modifier.size(38.dp),
+            RoundIconButton(Icons.Outlined.Flip, "Flip horizontal", { editor.updateGeo(g.copy(flipH = !g.flipH)) }, Modifier.size(32.dp),
                 tint = if (g.flipH) Palette.Amber else Palette.Text)
             Spacer(Modifier.width(6.dp))
-            RoundIconButton(Icons.Outlined.Flip, "Flip vertical", { editor.updateGeo(g.copy(flipV = !g.flipV)) }, Modifier.size(38.dp).rotate(90f),
+            RoundIconButton(Icons.Outlined.Flip, "Flip vertical", { editor.updateGeo(g.copy(flipV = !g.flipV)) }, Modifier.size(32.dp).rotate(90f),
                 tint = if (g.flipV) Palette.Amber else Palette.Text)
             Spacer(Modifier.width(6.dp))
-            RoundIconButton(Icons.Outlined.RestartAlt, "Reset", { editor.updateGeo(Geometry()) }, Modifier.size(38.dp))
+            RoundIconButton(Icons.Outlined.RestartAlt, "Reset", { editor.updateGeo(Geometry()) }, Modifier.size(32.dp))
         }
+        var mode by rememberSaveable { mutableStateOf(0) }
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Straighten", "Vertical", "Horizontal").forEachIndexed { i, label ->
+                val changed = when (i) { 0 -> g.angle != 0f; 1 -> g.perspV != 0f; else -> g.perspH != 0f }
+                Chip(if (changed && mode != i) "$label •" else label, mode == i, { mode = i })
+            }
+        }
+        val pctFmt: (Float) -> String = { v -> val r = v.roundToInt(); if (r > 0) "+$r" else "$r" }
         AngleDial(
-            value = g.angle,
-            onChange = { editor.updateGeo(g.copy(angle = it)) },
+            value = when (mode) { 0 -> g.angle; 1 -> g.perspV * 100f; else -> g.perspH * 100f },
+            onChange = { v ->
+                val cur = editor.geo
+                editor.updateGeo(when (mode) { 0 -> cur.copy(angle = v); 1 -> cur.copy(perspV = v / 100f); else -> cur.copy(perspH = v / 100f) })
+            },
             onActive = onStraightening,
+            range = if (mode == 0) 45f else 100f,
+            unitDp = if (mode == 0) 9f else 3f,
+            format = if (mode == 0) { v -> String.format(Locale.US, "%+.1f°", v).replace("+0.0°", "0°").replace("-0.0°", "0°") } else pctFmt,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
         )
-        Spacer(Modifier.height(6.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Spacer(Modifier.height(2.dp))
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
             items(CropMath.PRESETS) { preset ->
                 AspectCard(preset.label, preset.ratio ?: if (preset.id == "original") sw.toFloat() / sh else null, g.aspect == preset.id) {
                     val (rw, rh) = rotated(g.rotation)
@@ -489,20 +702,19 @@ private fun CropPanel(editor: EditorController, onStraightening: (Boolean) -> Un
 private fun LensPanel(editor: EditorController) {
     val f = editor.fx
     val selected = LensPreset.entries.getOrElse(f.lens) { LensPreset.NONE }
-    Column(Modifier.fillMaxSize().padding(top = 6.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("LENS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold))
-                Text(selected.blurb, style = Type.Body.copy(fontSize = 11.5.sp), maxLines = 2)
-            }
+    Column(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+        // Fixed height so switching recipes never moves the row below.
+        Column(Modifier.fillMaxWidth().height(38.dp).padding(start = 20.dp, end = 16.dp)) {
+            Text("LENS", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold))
+            Text(selected.blurb, style = Type.Body.copy(fontSize = 11.5.sp, lineHeight = 14.sp), maxLines = 2)
         }
         Spacer(Modifier.height(8.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(LensPreset.entries) { preset ->
-                Column(Modifier.width(64.dp).clickable { editor.updateFx(preset.applyTo(f)) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(Modifier.width(56.dp).clickable { editor.updateFx(preset.applyTo(f)) }, horizontalAlignment = Alignment.CenterHorizontally) {
                     val sel = preset == selected
                     Box(
-                        Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)).background(Palette.Surface2)
+                        Modifier.size(50.dp).clip(RoundedCornerShape(13.dp)).background(Palette.Surface2)
                             .border(if (sel) 2.dp else 0.dp, if (sel) Palette.Amber else Color.Transparent, RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center,
                     ) { LensIcon(preset, if (sel) Palette.Amber else Palette.TextDim) }
@@ -512,7 +724,7 @@ private fun LensPanel(editor: EditorController) {
                 }
             }
         }
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 4.dp, bottom = 8.dp)) {
+        Column(Modifier.panelScroll().padding(top = 4.dp, bottom = 8.dp)) {
             if (f.distortion > 0f || selected in listOf(LensPreset.FISHEYE, LensPreset.CIRCLE, LensPreset.WIDE)) {
                 FilmSlider("Distortion", f.distortion, { editor.updateFx(f.copy(distortion = it)) }, min = 0f, max = 1f, default = 0f)
             }
@@ -576,13 +788,13 @@ private fun LensIcon(preset: LensPreset, color: Color) {
 
 @Composable
 private fun AspectCard(label: String, ratio: Float?, selected: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(64.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(54.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Surface2)
+            Modifier.size(54.dp).clip(RoundedCornerShape(12.dp)).background(Palette.Surface2)
                 .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Amber else Color.Transparent, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(38.dp)) {
+            Canvas(Modifier.size(32.dp)) {
                 val c = if (selected) Palette.Amber else Palette.TextDim
                 if (ratio == null) {
                     val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 5f))
@@ -593,7 +805,7 @@ private fun AspectCard(label: String, ratio: Float?, selected: Boolean, onClick:
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         Text(label, fontSize = 11.sp, maxLines = 1, color = if (selected) Palette.Text else Palette.TextDim, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
@@ -601,7 +813,7 @@ private fun AspectCard(label: String, ratio: Float?, selected: Boolean, onClick:
 @Composable
 private fun FramePanel(editor: EditorController) {
     val f = editor.fx
-    Column(Modifier.fillMaxSize().padding(top = 6.dp)) {
+    Column(Modifier.fillMaxWidth().panelScroll().padding(top = 2.dp)) {
         Text("FRAME", style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold), modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 12.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FrameStyle.entries.forEach { style ->
