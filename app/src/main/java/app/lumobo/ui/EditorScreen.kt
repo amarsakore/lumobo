@@ -394,7 +394,9 @@ fun EditorScreen(
             (rw * g0.width) / (rh * g0.height).coerceAtLeast(1f)
         } else 0.75f
         val photoH = (conf.screenWidthDp - 12) / photoAspect.coerceIn(0.4f, 3f)
-        val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(150f, conf.screenHeightDp * 0.42f).dp
+        // Never taller than it is for a 3:4 photo, so wide photos don't get a huge panel.
+        val capH = conf.screenHeightDp - 170 - (conf.screenWidthDp - 12) / 0.75f
+        val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(150f, maxOf(150f, capH)).dp
         Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
             Box(
                 Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
