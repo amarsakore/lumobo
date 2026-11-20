@@ -134,6 +134,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -302,24 +304,32 @@ fun EditorScreen(
         val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(196f, maxOf(196f, capH)).dp
         val fixedTool = panel in FIXED
         var fullPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        var contentPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        var imageBoxPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
         val handlePx = with(density) { 14.dp.toPx() }
         val capPx = with(density) { panelH.toPx() }
-        // Collapsed: as many controls as fit whole. Open: all of them.
-        val collapsedPx = when {
-            fullPx == 0 -> handlePx + capPx
-            fixedTool -> fullPx.toFloat()
-            else -> handlePx + sheetState.snapHeight(capPx, (fullPx - handlePx).toInt())
+        // Collapsed, every tool has the same height (so the photo never moves); inside it, as
+        // many controls as fit whole are shown. Crop is the one tool that may be taller.
+        val uniformPx = maxOf(handlePx + capPx, if (panel == Tool.CROP) handlePx + contentPx else 0f)
+        val snapPx = when {
+            contentPx == 0 -> uniformPx
+            fixedTool -> handlePx + contentPx
+            else -> handlePx + sheetState.snapHeight(capPx, contentPx)
         }
-        val overflow = !fixedTool && fullPx > collapsedPx + 1f
+        val overflow = !fixedTool && handlePx + contentPx > snapPx + 1f
         androidx.compose.runtime.SideEffect { sheetState.overflow = overflow }
         val open = sheetState.expanded && overflow
-        // The sheet slides on the GPU (a layer offset), so nothing re-lays out while it moves.
+        // The sheet slides on the GPU (a layer offset) and its controls are revealed by a clip,
+        // so nothing re-lays out while it moves.
+        val spring = androidx.compose.animation.core.spring<Float>(dampingRatio = 1f, stiffness = 380f)
         val shown by androidx.compose.animation.core.animateFloatAsState(
-            if (open) fullPx.toFloat() else collapsedPx,
-            androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 380f), label = "sheet",
+            if (open) maxOf(fullPx.toFloat(), uniformPx) else uniformPx, spring, label = "sheet",
+        )
+        val reveal by androidx.compose.animation.core.animateFloatAsState(
+            if (open) handlePx + contentPx else snapPx, spring, label = "reveal",
         )
         val padPx by androidx.compose.animation.core.animateFloatAsState(
-            if (preview) 0f else collapsedPx, androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "pad",
+            if (preview) 0f else uniformPx, androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "pad",
         )
         val imagePad = with(density) { padPx.toDp() }
         val canExpand = overflow
@@ -343,7 +353,20 @@ fun EditorScreen(
 
         // ── Image
         Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-        Box(Modifier.fillMaxSize().padding(bottom = imagePad), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxSize().padding(bottom = imagePad)
+                .onSizeChanged { imageBoxPx = it.height }
+                .graphicsLayer {
+                    // As the panel slides up, the photo shrinks into the space above it (GPU only).
+                    val h = imageBoxPx.toFloat()
+                    if (h > 0f) {
+                        val k = ((h - (shown - uniformPx).coerceAtLeast(0f)) / h).coerceIn(0.3f, 1f)
+                        scaleX = k; scaleY = k
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
             when (val s = editor.status) {
                 EditorStatus.Loading -> CircularProgressIndicator(color = Palette.Amber, strokeWidth = 2.dp)
                 is EditorStatus.Failed -> Text(s.message, style = Type.Body, textAlign = TextAlign.Center, modifier = Modifier.padding(32.dp))
@@ -435,6 +458,7 @@ fun EditorScreen(
             if (!preview) {
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .heightIn(min = with(density) { uniformPx.toDp() })
                         .onSizeChanged { fullPx = it.height }
                         .graphicsLayer { translationY = (fullPx - shown).coerceAtLeast(0f) }
                         .background(Palette.Surface),
@@ -454,6 +478,13 @@ fun EditorScreen(
                     Box(
                         Modifier.fillMaxWidth()
                             .heightIn(max = if (fixedTool && panel != Tool.CROP) panelH else maxPanel)
+                            .onSizeChanged { contentPx = it.height }
+                            .drawWithContent {
+                                // Show whole controls only: hide anything past the reveal line.
+                                clipRect(bottom = (reveal - handlePx).coerceAtLeast(0f)) {
+                                    this@drawWithContent.drawContent()
+                                }
+                            }
                             .onGloballyPositioned { sheetState.contentCoords = it; sheetState.updateTop() }
                             .nestedScroll(sheet)
                             .then(sheetDrag),
