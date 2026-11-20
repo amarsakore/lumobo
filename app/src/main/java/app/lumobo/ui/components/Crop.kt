@@ -170,8 +170,8 @@ object CropMath {
 /**
  * Interactive crop frame over [image] (the full, transformed frame). Drag corners to resize,
  * edges when the aspect is free, and inside to move. When a drag ends the view glides so the
- * crop fills the screen (Lightroom-style). Pinch to zoom the photo inside the frame, which
- * tightens (or loosens) the crop; drag with two fingers to move it. Reports changes through [onChange].
+ * crop fills the screen (Lightroom-style). Once cropped, the frame stays put: drag inside it to
+ * slide the photo, pinch to zoom the photo in or out (a tighter or looser crop). Reports changes through [onChange].
  */
 @Composable
 fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit, modifier: Modifier = Modifier, fineGrid: Boolean = false) {
@@ -260,8 +260,14 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
                                 // Two fingers: zoom the photo inside the frame (a tighter crop) and drag it.
                                 if (!pinching) { pinching = true; mode = CropMath.PINCH; work[0] = current }
                                 val k = zoom.value
+                                val f = ev.calculateZoom()
                                 val pan = ev.calculatePan()
-                                val next = CropMath.zoom(work[0], ev.calculateZoom(), -pan.x / (dw * k), -pan.y / (dh * k))
+                                // Zoom around the fingers: the photo point under them stays under them.
+                                val p = ev.calculateCentroid()
+                                val keep = 1f - 1f / f
+                                val dx = (p.x - bw / 2f) / (dw * k) * keep - pan.x / (dw * k * f)
+                                val dy = (p.y - bh / 2f) / (dh * k) * keep - pan.y / (dh * k * f)
+                                val next = CropMath.zoom(work[0], f, dx, dy)
                                 work[0] = next
                                 change(next)
                                 frame(next)
@@ -282,6 +288,14 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
                             val ratio = CropMath.lockedRatio(g.aspect, image.width, image.height)
                             val rn = ratio?.let { it * image.height / image.width }
                             val k = zoom.value
+                            if (mode == CropMath.MOVE) {
+                                // Inside the crop: slide the photo under the fixed frame.
+                                val next = CropMath.drag(g, mode, -d.x / (dw * k), -d.y / (dh * k), rn)
+                                work[0] = next
+                                change(next)
+                                frame(next)
+                                continue
+                            }
                             val next = CropMath.drag(g, mode, d.x / (dw * k), d.y / (dh * k), rn)
                             work[0] = next
                             change(next)
@@ -357,13 +371,18 @@ fun AngleDial(
     val tick = if (range > 50f) 5 else 1
     val acc = remember { floatArrayOf(0f) }
     androidx.compose.foundation.layout.Column(modifier, horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-        androidx.compose.material3.Text(
-            format(value),
-            style = app.lumobo.ui.theme.Type.Mono.copy(
-                color = if (abs(value) > 0.05f) app.lumobo.ui.theme.Palette.Amber else app.lumobo.ui.theme.Palette.Text,
-                fontSize = androidx.compose.ui.unit.TextUnit(15f, androidx.compose.ui.unit.TextUnitType.Sp),
-            ),
+        // Centre the number itself on the needle; a unit (°) hangs off to the right.
+        val label = format(value)
+        val unit = if (label.endsWith("°")) "°" else ""
+        val style = app.lumobo.ui.theme.Type.Mono.copy(
+            color = if (abs(value) > 0.05f) app.lumobo.ui.theme.Palette.Amber else app.lumobo.ui.theme.Palette.Text,
+            fontSize = androidx.compose.ui.unit.TextUnit(15f, androidx.compose.ui.unit.TextUnitType.Sp),
         )
+        androidx.compose.foundation.layout.Row {
+            androidx.compose.material3.Text(unit, style = style.copy(color = Color.Transparent))
+            androidx.compose.material3.Text(label.removeSuffix(unit), style = style)
+            androidx.compose.material3.Text(unit, style = style)
+        }
         Canvas(
             Modifier
                 .fillMaxWidth()
