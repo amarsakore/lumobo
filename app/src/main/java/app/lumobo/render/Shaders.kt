@@ -72,7 +72,16 @@ void main() {
     // can't explode into a mesh of rays.
     float r3 = ringLuma(uPeak * 4.2, 4.0);
     float open = smoothstep(0.015 * hi, 0.12 * hi, l0 - r3);
-    float w = k * k * 3.0 * open / max(hi, 0.35);
+    // Area check: a sparkle sits in a mostly darker region. Where the surroundings (a few
+    // percent of the frame) are mostly bright, like a skylight roof or a sunlit opening,
+    // nothing qualifies, so heavy light never turns into a mesh of rays.
+    float area = dot(toLin(textureLod(uSrc, vUv, 6.0).rgb), LUMA);
+    float lone = 1.0 - smoothstep(0.5 * hi, 0.8 * hi, area);
+    // Point-like lights (fairy lights, lamps, sparkles) get full stars; broad glowing patches
+    // (a headlight's flare) get softer ones, so rays stay fine instead of smearing into bands.
+    float near = dot(toLin(textureLod(uSrc, vUv, 3.5).rgb), LUMA);
+    float point = mix(0.8, 1.0, 1.0 - smoothstep(0.5, 0.95, near / max(l0, 1e-3)));
+    float w = k * k * 3.0 * open * lone * point / max(hi, 0.35);
     fragColor = vec4(lin * w, 1.0);
 }
 """
@@ -112,7 +121,9 @@ uniform vec3 uTint;
 void main() {
     // Density control: many glints (sunlit leaves, a skylight roof) -> proportionally fainter rays.
     float mean = dot(textureLod(uTex, vec2(0.5), 12.0).rgb, vec3(0.3333));
-    float density = 1.0 / (1.0 + mean * 30.0);
+    // Many glints at once -> fewer, fainter rays (grows fast, so a few sparkles stay bright).
+    float m = mean * 25.0;
+    float density = 1.0 / (1.0 + m + m * m);
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
