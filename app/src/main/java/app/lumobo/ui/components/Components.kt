@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -103,70 +104,66 @@ fun rememberSoftHaptics(): SoftHaptics {
     return remember(view) { SoftHaptics(view) { settings.haptics } }
 }
 
-/** Editor tool panel: [overflow] when its controls don't fit, [expanded] when pulled up. */
+/** Editor tool panel state: pulled up or not, and how its controls stack (for clean snapping). */
 @Stable
 class PanelSheet {
-    private var _expanded by mutableStateOf(false)
-    /** Pulled up. Changing it starts a short settle, during which controls slide rather than pop. */
-    var expanded: Boolean
-        get() = _expanded
-        set(v) {
-            if (v != _expanded) settleUntil = android.os.SystemClock.uptimeMillis() + SETTLE_MS
-            _expanded = v
-        }
-    var settleUntil = 0L
-    /** Bumped when a settle ends, so panels re-lay out without the extra controls. */
-    var settleTick by androidx.compose.runtime.mutableIntStateOf(0)
+    var expanded by mutableStateOf(false)
     var overflow by mutableStateOf(false)
-    companion object { const val SETTLE_MS = 460L }
     val open get() = expanded && overflow
+    /** Heights of the stacked controls and where the stack starts inside the panel. */
+    var childHeights by mutableStateOf(IntArray(0))
+    var columnTop by androidx.compose.runtime.mutableIntStateOf(0)
+    var contentCoords: androidx.compose.ui.layout.LayoutCoordinates? = null
+    var columnCoords: androidx.compose.ui.layout.LayoutCoordinates? = null
+
+    fun updateTop() {
+        val a = contentCoords
+        val b = columnCoords
+        val y = if (a != null && b != null && a.isAttached && b.isAttached) a.localPositionOf(b, Offset.Zero).y.roundToInt() else 0
+        if (y != columnTop) columnTop = y
+    }
+
+    /** Tallest height up to [cap] that ends exactly after a control, never through one. */
+    fun snapHeight(cap: Float, full: Int): Float {
+        if (full <= cap) return full.toFloat()
+        val hs = childHeights
+        if (hs.isEmpty()) return cap
+        var h = columnTop.toFloat()
+        for (c in hs) { if (h + c > cap) break; h += c }
+        return h
+    }
 }
 
 val LocalPanelSheet = staticCompositionLocalOf { PanelSheet() }
 
-/** Vertical scroll for a tool panel's controls; tells the sheet whether they overflow. */
+/** Vertical scroll for a tool's controls (used by Crop, which always fits). */
 @Composable
-fun Modifier.panelScroll(): Modifier {
-    val st = rememberScrollState()
-    val sheet = LocalPanelSheet.current
-    val max = st.maxValue
-    LaunchedEffect(max, sheet.open) {
-        if (max != Int.MAX_VALUE && !sheet.open) sheet.overflow = max > 0
-    }
-    DisposableEffect(sheet) { onDispose { sheet.overflow = false } }
-    return this.verticalScroll(st)
-}
+fun Modifier.panelScroll(): Modifier = this.verticalScroll(rememberScrollState())
 
 /**
- * Stack of a tool's controls that never shows one cut in half: when the panel is shorter than
- * all of them, it stops after the last control that fits and marks the sheet as overflowing,
- * so a swipe up reveals the rest.
+ * Stack of a tool's controls. It always lays out all of them; the panel shows as many as fit
+ * whole when collapsed and the rest when pulled up, so a control is never cut in half.
  */
 @Composable
 fun PanelColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val sheet = LocalPanelSheet.current
-    DisposableEffect(sheet) { onDispose { sheet.overflow = false } }
-    androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
+    DisposableEffect(sheet) {
+        onDispose { sheet.childHeights = IntArray(0); sheet.columnCoords = null; sheet.columnTop = 0 }
+    }
+    androidx.compose.ui.layout.Layout(
+        content,
+        modifier.then(Modifier.onGloballyPositioned { sheet.columnCoords = it; sheet.updateTop() }),
+    ) { measurables, constraints ->
         val cs = constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
         val placeables = measurables.map { it.measure(cs) }
-        var h = 0
-        var shown = 0
-        for (p in placeables) {
-            if (constraints.hasBoundedHeight && h + p.height > constraints.maxHeight) break
-            h += p.height
-            shown++
-        }
-        val over = shown < placeables.size
-        if (over || !sheet.open) sheet.overflow = over
-        // While the panel is sliding, keep placing the controls that no longer fit: the panel
-        // clips them, so they glide out of view instead of vanishing before it moves.
-        sheet.settleTick
-        val settling = android.os.SystemClock.uptimeMillis() < sheet.settleUntil
-        val placed = if (settling) placeables.size else shown
+        val hs = IntArray(placeables.size) { placeables[it].height }
+        if (!hs.contentEquals(sheet.childHeights)) sheet.childHeights = hs
+        val total = hs.sum()
         val w = if (constraints.hasBoundedWidth) constraints.maxWidth else placeables.maxOfOrNull { it.width } ?: 0
+        val h = if (constraints.hasBoundedHeight) minOf(total, constraints.maxHeight) else total
         layout(w, maxOf(h, constraints.minHeight)) {
             var y = 0
-            for (i in 0 until placed) { placeables[i].place(0, y); y += placeables[i].height }
+            for (p in placeables) { p.place(0, y); y += p.height }
         }
     }
 }

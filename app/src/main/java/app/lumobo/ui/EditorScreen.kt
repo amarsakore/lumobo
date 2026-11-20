@@ -131,6 +131,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -153,7 +156,7 @@ internal enum class Tool(val label: String, val icon: ImageVector) {
 private val BAR = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.CROP, Tool.LENS, Tool.DETAIL, Tool.MIXER, Tool.GRADING)
 
 /** Tools whose panel can be pulled up to show every control at once. */
-private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP)
+private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP, Tool.CURVES)
 
 @Composable
 fun EditorScreen(
@@ -283,8 +286,64 @@ fun EditorScreen(
             }
         }
 
+        // ── Panel sizing. The panel follows the photo: a tall photo keeps it compact, a wider
+        // one gives it more room (never more than for a 3:4 photo). It always fits Color whole.
+        val conf = LocalConfiguration.current
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val maxPanel = (conf.screenHeightDp * 0.58f).dp
+        val (srcW, srcH) = editor.sourceSize
+        val g0 = editor.geo
+        val photoAspect = if (srcW > 0 && srcH > 0) {
+            val (rw, rh) = if (g0.rotation % 2 == 1) srcH to srcW else srcW to srcH
+            (rw * g0.width) / (rh * g0.height).coerceAtLeast(1f)
+        } else 0.75f
+        val photoH = (conf.screenWidthDp - 12) / photoAspect.coerceIn(0.4f, 3f)
+        val capH = conf.screenHeightDp - 170 - (conf.screenWidthDp - 12) / 0.75f
+        val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(196f, maxOf(196f, capH)).dp
+        val fixedTool = panel in FIXED
+        var fullPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        val handlePx = with(density) { 14.dp.toPx() }
+        val capPx = with(density) { panelH.toPx() }
+        // Collapsed: as many controls as fit whole. Open: all of them.
+        val collapsedPx = when {
+            fullPx == 0 -> handlePx + capPx
+            fixedTool -> fullPx.toFloat()
+            else -> handlePx + sheetState.snapHeight(capPx, (fullPx - handlePx).toInt())
+        }
+        val overflow = !fixedTool && fullPx > collapsedPx + 1f
+        androidx.compose.runtime.SideEffect { sheetState.overflow = overflow }
+        val open = sheetState.expanded && overflow
+        // The sheet slides on the GPU (a layer offset), so nothing re-lays out while it moves.
+        val shown by androidx.compose.animation.core.animateFloatAsState(
+            if (open) fullPx.toFloat() else collapsedPx,
+            androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 380f), label = "sheet",
+        )
+        val padPx by androidx.compose.animation.core.animateFloatAsState(
+            if (preview) 0f else collapsedPx, androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing), label = "pad",
+        )
+        val imagePad = with(density) { padPx.toDp() }
+        val canExpand = overflow
+        val sheet = rememberPanelSheet(
+            canExpand = { sheetState.overflow },
+            isExpanded = { sheetState.open },
+            onExpand = { sheetState.expanded = it },
+        )
+        val dragAcc = remember { floatArrayOf(0f) }
+        fun verticalDrag(onUp: () -> Unit, onDown: () -> Unit) = Modifier.pointerInput(Unit) {
+            detectVerticalDragGestures(onDragStart = { dragAcc[0] = 0f }) { ch, dy ->
+                dragAcc[0] += dy
+                if (dragAcc[0] < -36f) { onUp(); dragAcc[0] = 0f; ch.consume() }
+                else if (dragAcc[0] > 36f) { onDown(); dragAcc[0] = 0f; ch.consume() }
+            }
+        }
+        val sheetDrag = verticalDrag(
+            onUp = { if (sheetState.overflow) sheetState.expanded = true },
+            onDown = { sheetState.expanded = false },
+        )
+
         // ── Image
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+        Box(Modifier.fillMaxSize().padding(bottom = imagePad), contentAlignment = Alignment.Center) {
             when (val s = editor.status) {
                 EditorStatus.Loading -> CircularProgressIndicator(color = Palette.Amber, strokeWidth = 2.dp)
                 is EditorStatus.Failed -> Text(s.message, style = Type.Body, textAlign = TextAlign.Center, modifier = Modifier.padding(32.dp))
@@ -371,79 +430,35 @@ fun EditorScreen(
                 }
             }
         }
-
-        // ── Control panel. Pull a tool's panel up to see all of its controls; pull the
-        // handle on Films (or the tab bar) up for every tool.
-        // Panels are as tall as their controls (up to panelH). One that has more controls
-        // than fit can be pulled up until all of them show; pull down to shrink it again.
-        val canExpand = panel !in FIXED && sheetState.overflow
-        val open = sheetState.open
-        val sheet = rememberPanelSheet(
-            canExpand = { panel !in FIXED && sheetState.overflow },
-            isExpanded = { sheetState.open },
-            onExpand = { sheetState.expanded = it },
-        )
-        val dragAcc = remember { floatArrayOf(0f) }
-        fun verticalDrag(onUp: () -> Unit, onDown: () -> Unit) = Modifier.pointerInput(Unit) {
-            detectVerticalDragGestures(onDragStart = { dragAcc[0] = 0f }) { ch, dy ->
-                dragAcc[0] += dy
-                if (dragAcc[0] < -36f) { onUp(); dragAcc[0] = 0f; ch.consume() }
-                else if (dragAcc[0] > 36f) { onDown(); dragAcc[0] = 0f; ch.consume() }
-            }
-        }
-        fun expandable() = panel !in FIXED && sheetState.overflow
-        val sheetDrag = verticalDrag(
-            onUp = { if (expandable()) sheetState.expanded = true },
-            onDown = { sheetState.expanded = false },
-        )
-        val conf = LocalConfiguration.current
-        val maxPanel = (conf.screenHeightDp * 0.58f).dp
-        LaunchedEffect(sheetState.expanded) {
-            delay(app.lumobo.ui.components.PanelSheet.SETTLE_MS + 20)
-            sheetState.settleTick++
-        }
-        // Panel height follows the photo: a tall photo keeps the panel compact (pull up for
-        // more), a wide one leaves room for a taller panel. Tools shorter than that shrink to fit.
-        val (srcW, srcH) = editor.sourceSize
-        val g0 = editor.geo
-        val photoAspect = if (srcW > 0 && srcH > 0) {
-            val (rw, rh) = if (g0.rotation % 2 == 1) srcH to srcW else srcW to srcH
-            (rw * g0.width) / (rh * g0.height).coerceAtLeast(1f)
-        } else 0.75f
-        val photoH = (conf.screenWidthDp - 12) / photoAspect.coerceIn(0.4f, 3f)
-        // Never taller than it is for a 3:4 photo, so wide photos don't get a huge panel.
-        val capH = conf.screenHeightDp - 170 - (conf.screenWidthDp - 12) / 0.75f
-        val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(150f, maxOf(150f, capH)).dp
-        if (preview) Spacer(Modifier.navigationBarsPadding())
-        this@Column.AnimatedVisibility(
-            visible = !preview,
-            enter = androidx.compose.animation.expandVertically() + fadeIn(),
-            exit = androidx.compose.animation.shrinkVertically() + fadeOut(),
-        ) {
-        Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
-            Box(
-                Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        if (expandable()) sheetState.expanded = !sheetState.open
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
-                    Modifier.width(32.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(if (open) Palette.Amber else if (canExpand) Palette.TextFaint else Palette.Surface3),
-                )
-            }
-            Box(
-                Modifier.fillMaxWidth()
-                    // Up to panelH (Crop always fits whole); a pulled-up panel grows smoothly
-                    // to show all of its controls.
-                    .heightIn(max = if (open || panel == Tool.CROP) maxPanel else panelH)
-                    .clipToBounds()
-                    .animateContentSize(androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 260f))
-                    .nestedScroll(sheet)
-                    .then(sheetDrag),
-            ) {
-              CompositionLocalProvider(app.lumobo.ui.components.LocalPanelSheet provides sheetState) {
+            // ── Tool panel: a sheet over the bottom of the photo area. Pull it up to see every
+            // control (it slides over the photo); it never cuts a control in half.
+            if (!preview) {
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                        .onSizeChanged { fullPx = it.height }
+                        .graphicsLayer { translationY = (fullPx - shown).coerceAtLeast(0f) }
+                        .background(Palette.Surface),
+                ) {
+                    Box(
+                        Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                if (sheetState.overflow) sheetState.expanded = !sheetState.expanded
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            Modifier.width(32.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
+                                .background(if (open) Palette.Amber else if (canExpand) Palette.TextFaint else Palette.Surface3),
+                        )
+                    }
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .heightIn(max = if (fixedTool && panel != Tool.CROP) panelH else maxPanel)
+                            .onGloballyPositioned { sheetState.contentCoords = it; sheetState.updateTop() }
+                            .nestedScroll(sheet)
+                            .then(sheetDrag),
+                    ) {
+                      CompositionLocalProvider(app.lumobo.ui.components.LocalPanelSheet provides sheetState) {
                 when (panel) {
                     Tool.FILMS -> FilmsPanel(editor, onPicked = { filmNote = if (it.isIdentity) null else it }) { panel = Tool.LOOKS }
                     Tool.LOOKS -> LooksPanel(editor)
@@ -457,8 +472,18 @@ fun EditorScreen(
                     Tool.LENS -> LensPanel(editor)
                     Tool.CROP -> CropPanel(editor) { straightening = it }
                 }
-              }
+                      }
+                    }
+                }
             }
+        }
+        if (preview) Spacer(Modifier.navigationBarsPadding())
+        this@Column.AnimatedVisibility(
+            visible = !preview,
+            enter = androidx.compose.animation.expandVertically() + fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically() + fadeOut(),
+        ) {
+        Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Line))
             // Scrolling tool bar: the tab for a sub-tool (Curves, My Looks) stays lit on its parent.
             val active = when (panel) { Tool.CURVES -> Tool.LIGHT; Tool.LOOKS -> Tool.FILMS; else -> panel }

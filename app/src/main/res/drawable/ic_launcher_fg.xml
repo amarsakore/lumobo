@@ -1,19 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Lens aperture inside a film frame. 108dp canvas, 72dp safe zone. -->
+<!-- Lumobo: a lens made of rainbow rings. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <!-- film frame -->
-    <path android:fillColor="#F5B841"
-        android:pathData="M30,36 h48 a4,4 0 0 1 4,4 v28 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-28 a4,4 0 0 1 4,-4z M31,41 v26 h46 v-26z"/>
-    <!-- sprocket holes -->
-    <path android:fillColor="#141416"
-        android:pathData="M33,37.5 h3 v2 h-3z M40,37.5 h3 v2 h-3z M47,37.5 h3 v2 h-3z M54,37.5 h3 v2 h-3z M61,37.5 h3 v2 h-3z M68,37.5 h3 v2 h-3z M33,68.5 h3 v2 h-3z M40,68.5 h3 v2 h-3z M47,68.5 h3 v2 h-3z M54,68.5 h3 v2 h-3z M61,68.5 h3 v2 h-3z M68,68.5 h3 v2 h-3z"/>
-    <!-- lens -->
-    <path android:fillColor="#F5B841"
-        android:pathData="M54,44 a10,10 0 1 1 0,20 a10,10 0 1 1 0,-20z"/>
-    <path android:fillColor="#141416"
-        android:pathData="M54,47 a7,7 0 1 1 0,14 a7,7 0 1 1 0,-14z"/>
-    <path android:fillColor="#FF7A3D"
-        android:pathData="M54,50.5 a3.5,3.5 0 1 1 0,7 a3.5,3.5 0 1 1 0,-7z"/>
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#E8463A" android:pathData="M18,54a36,36 0 1,0 72,0a36,36 0 1,0 -72,0" />
+    <path android:fillColor="#F28C28" android:pathData="M23,54a31,31 0 1,0 62,0a31,31 0 1,0 -62,0" />
+    <path android:fillColor="#F5C443" android:pathData="M28,54a26,26 0 1,0 52,0a26,26 0 1,0 -52,0" />
+    <path android:fillColor="#4FA35B" android:pathData="M33,54a21,21 0 1,0 42,0a21,21 0 1,0 -42,0" />
+    <path android:fillColor="#3C7BC0" android:pathData="M38,54a16,16 0 1,0 32,0a16,16 0 1,0 -32,0" />
+    <path android:fillColor="#1A1714" android:pathData="M43,54a11,11 0 1,0 22,0a11,11 0 1,0 -22,0" />
+    <path android:fillColor="#F2EBDD" android:pathData="M47.4,50.4a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
 </vector>

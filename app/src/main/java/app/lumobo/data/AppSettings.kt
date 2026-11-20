@@ -22,6 +22,8 @@ class AppSettings private constructor(context: Context) {
 
     // ── Appearance: 0 follow the system, 1 light, 2 dark
     var themeMode by int("theme_mode", 0)
+    /** Accent from the wallpaper (Material You) on Android 12+. */
+    var dynamicAccent by bool("dynamic_accent", true)
 
     // ── New edits
     var lastFilmId by string("last_film", "original")

@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 /** App colours. Reads [dark], so everything recolours when the theme changes. */
 object Palette {
     var dark by mutableStateOf(true)
+    /** Wallpaper accent (Material You), or null for Lumobo's amber. */
+    var accent by mutableStateOf<Color?>(null)
     val Bg get() = if (dark) Color(0xFF0B0B0C) else Color(0xFFF4F2EE)
     val Surface get() = if (dark) Color(0xFF141416) else Color(0xFFFFFFFF)
     val Surface2 get() = if (dark) Color(0xFF1C1C1F) else Color(0xFFEFECE7)
@@ -35,7 +37,7 @@ object Palette {
     val Text get() = if (dark) Color(0xFFF2EFE9) else Color(0xFF1B1A18)
     val TextDim get() = if (dark) Color(0xFF9C978F) else Color(0xFF6A655E)
     val TextFaint get() = if (dark) Color(0xFF5F5B56) else Color(0xFFA8A29A)
-    val Amber get() = if (dark) Color(0xFFF5B841) else Color(0xFFE09B12)
+    val Amber get() = accent ?: if (dark) Color(0xFFF5B841) else Color(0xFFE09B12)
     val Orange = Color(0xFFFF7A3D)
     val Red = Color(0xFFE5534B)
     /** Slider and dial knobs. */
@@ -54,9 +56,12 @@ object Type {
 @Composable
 fun LumoboTheme(content: @Composable () -> Unit) {
     val ctx = LocalContext.current
-    val mode = remember { app.lumobo.data.AppSettings.get(ctx) }.themeMode
-    val dark = when (mode) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
+    val settings = remember { app.lumobo.data.AppSettings.get(ctx) }
+    val dark = when (settings.themeMode) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     Palette.dark = dark
+    Palette.accent = if (settings.dynamicAccent && android.os.Build.VERSION.SDK_INT >= 31) {
+        (if (dark) androidx.compose.material3.dynamicDarkColorScheme(ctx) else androidx.compose.material3.dynamicLightColorScheme(ctx)).primary
+    } else null
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

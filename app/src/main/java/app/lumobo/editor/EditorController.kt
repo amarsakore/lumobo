@@ -121,18 +121,31 @@ class EditorController(
     private var bufIdx = 0
     private val dirty = Channel<Unit>(Channel.CONFLATED)
 
+    private val drafts = app.lumobo.data.Drafts.get(context)
+    private val draftKey = (target ?: uri).toString()
+
     init {
-        if (initial != null) {
-            profile = Profiles.byId(initial.filmId)
-            adj = initial.adj
-            fx = initial.fx
-            geo = initial.geo
+        // Auto-saved edits win (they're the latest); else a developed photo's own recipe;
+        // else the photo opens as shot.
+        val start = drafts.load(draftKey) ?: initial
+        if (start != null) {
+            profile = Profiles.byId(start.filmId)
+            adj = start.adj
+            fx = start.fx
+            geo = start.geo
         } else {
-            // A library photo always opens as shot. Edits live only in developed copies.
             profile = Profiles.ORIGINAL
             fx = settings.effectsFor(Profiles.ORIGINAL)
         }
         commit()
+    }
+
+    /** Auto-save: keep the current edit as this photo's draft (cleared when back to untouched). */
+    private fun saveDraft() {
+        val untouched = profile.isIdentity && adj == Adjustments() && geo == Geometry() &&
+            fx == settings.effectsFor(Profiles.ORIGINAL) && initial == null
+        if (untouched) drafts.clear(draftKey)
+        else drafts.save(draftKey, Recipe(uri, profile.id, adj, fx, geo))
     }
 
     private fun snapshot() = Snapshot(profile, adj, fx, geo)
@@ -163,6 +176,8 @@ class EditorController(
     private fun refreshHistory() {
         canUndo = historyIndex > 0
         canRedo = historyIndex < history.lastIndex
+        // Every committed change (and undo / redo) is auto-saved.
+        if (status == EditorStatus.Ready || historyIndex > 0) saveDraft()
     }
 
     private fun restore(s: Snapshot) {

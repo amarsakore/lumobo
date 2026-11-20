@@ -81,6 +81,9 @@ fun SettingsScreen(onBack: () -> Unit) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = bottom + 24.dp)) {
             Section("Appearance") {
                 ChoiceRow("Theme", listOf("System", "Light", "Dark"), s.themeMode) { s.themeMode = it }
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    SwitchRow("Material You accent", "Buttons and highlights take your wallpaper's colour.", s.dynamicAccent) { s.dynamicAccent = it }
+                }
             }
 
             Section("Film character") {
@@ -127,7 +130,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Lumobo 1.4.4", style = Type.Title.copy(fontSize = 15.sp))
+                        Text("Lumobo 1.5", style = Type.Title.copy(fontSize = 15.sp))
                         Text("${Profiles.all.size - 1} films and camera looks · source code on GitHub", style = Type.Body.copy(fontSize = 12.sp))
                     }
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = Palette.TextDim, modifier = Modifier.size(18.dp))
