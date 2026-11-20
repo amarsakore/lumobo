@@ -399,6 +399,10 @@ class GlRenderer {
         GLES30.glViewport(0, 0, w, h)
         val p = progMain
         GLES30.glUseProgram(p)
+        // Create / update helper textures before binding units: doing it mid-sequence would
+        // rebind whichever unit is active (it used to replace the Dehaze haze map with the curve).
+        val curvesOn = !adj.curves.isIdentity
+        val curveTex = if (curvesOn) curveTexture(adj.curves) else grainTex
         fun bind(unit: Int, target: Int, tex: Int, name: String) {
             GLES30.glActiveTexture(GLES30.GL_TEXTURE0 + unit)
             GLES30.glBindTexture(target, tex)
@@ -413,8 +417,7 @@ class GlRenderer {
         bind(6, GLES30.GL_TEXTURE_2D, fxTex[7], "uStarTex")
         bind(7, GLES30.GL_TEXTURE_2D, fxTex[8], "uWide")
         bind(8, GLES30.GL_TEXTURE_2D, fxTex[10], "uHaze")
-        val curvesOn = !adj.curves.isIdentity
-        bind(9, GLES30.GL_TEXTURE_2D, if (curvesOn) curveTexture(adj.curves) else grainTex, "uCurve")
+        bind(9, GLES30.GL_TEXTURE_2D, curveTex, "uCurve")
         val g = gains(adj)
         GLES30.glUniform1f(uniform(p, "uLutSize"), lutSize.toFloat())
         GLES30.glUniform1f(uniform(p, "uIntensity"), adj.intensity)

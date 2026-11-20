@@ -23,13 +23,14 @@ class LooksRepository private constructor(context: Context) {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val r = Recipe.decode(o.getString("recipe")) ?: continue
-                looks += SavedLook(o.getLong("id"), o.getString("name"), r.filmId, r.adj, r.fx.copy(dateStamp = false))
+                looks += SavedLook(o.getLong("id"), o.getString("name"), r.filmId, r.adj, r.fx.copy(dateStamp = false, starMask = emptyList()))
             }
         }
     }
 
     fun add(name: String, filmId: String, adj: Adjustments, fx: Effects): SavedLook {
-        val look = SavedLook(System.currentTimeMillis(), name.ifBlank { "My look ${looks.size + 1}" }, filmId, adj, fx)
+        // A look is the film + settings; per-photo star-eraser marks stay with the photo.
+        val look = SavedLook(System.currentTimeMillis(), name.ifBlank { "My look ${looks.size + 1}" }, filmId, adj, fx.copy(starMask = emptyList()))
         looks.add(0, look)
         persist()
         return look

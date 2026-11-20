@@ -198,6 +198,8 @@ fun EditorScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP); if (panel != Tool.LENS) editor.starBrush = false }
+    // No star or streak left to erase: leave brush mode so the photo takes gestures again.
+    LaunchedEffect(editor.fx.star > 0f || editor.fx.streak > 0f) { if (editor.fx.star <= 0f && editor.fx.streak <= 0f) editor.starBrush = false }
     LaunchedEffect(Unit) { if (note != null) toast = note to null }
     LaunchedEffect(toast) {
         if (toast != null) {
@@ -394,7 +396,7 @@ fun EditorScreen(
                                 onHold = { comparing = it },
                             )
                         }
-                        if (panel == Tool.LENS && editor.starBrush && shown != null) {
+                        if (panel == Tool.LENS && editor.starBrush && (editor.fx.star > 0f || editor.fx.streak > 0f) && shown != null) {
                             // Brush over the photo: paints where stars are erased.
                             var brushAt by remember { mutableStateOf<Offset?>(null) }
                             // Keyed on nothing that changes while painting: every dab re-renders the

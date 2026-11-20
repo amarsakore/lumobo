@@ -60,7 +60,7 @@
 - **Color:** temperature, tint, vibrance and saturation; an 8-band **HSL Mixer**; Lightroom-style **Color Grading** wheels for shadows, midtones and highlights.
 - **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Edge-aware, so sharpening and clarity never draw glowing halos.
 - **Effects:** grain (size and colour), halation, bloom, vignette, chromatic aberration and four light-leak styles.
-- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl.
+- **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval swirl. A **star eraser** brush paints out lights you don't want to sparkle.
 - **Crop like Lightroom:** aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), straighten dial, vertical and horizontal perspective, flips and 90° rotation. The frame stays put: drag to slide the photo, pinch to zoom it.
 - **Frames and imprints:** instant border, white border or 35mm film scan, plus a seven-segment LED date stamp in your colour and format.
 
@@ -68,8 +68,8 @@
 - **Compact editor.** Every tool sits in one scrolling bar. Panels keep one height, show whole controls only, and slide up smoothly to reveal everything, while the photo shrinks to stay in view.
 - **Preview** button to hide the tools and see your photo big, and **hold to compare** with the original.
 - **Undo, redo and Reset all.** A whole slider drag counts as one step; soft haptic ticks on every slider and dial.
-- **Auto-save.** Every change is kept as a draft for that photo, so you can leave and come back. Nothing goes to your gallery until you tap **Save**.
-- **Edit again any time.** Developed photos carry their full recipe, so *Edit Again* picks up exactly where you left off.
+- **Library photos always open fresh.** Nothing goes to your gallery until you tap **Save**.
+- **Edit again any time.** Developed photos carry their full recipe, so *Edit Again* picks up exactly where you left off, and changes made while re-editing are auto-saved.
 - **Light and dark themes** that follow your phone, and a **Material You** accent that takes your wallpaper's colour.
 
 ### Gallery
@@ -313,7 +313,7 @@ The model is baked into a **64³ 3D LUT**. An OpenGL ES 3 shader ([`Shaders.kt`]
 - **Tilt-shift, soft focus and swirl** blend in a graded, blurred layer. **Fisheye** uses a true tangent projection, and the circular version maps the whole frame into the circle.
 - **Grain** comes from a tileable, gaussian-clumped noise field sized to the frame.
 
-Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive. While you edit, the same recipe is auto-saved as a draft on the phone.
+Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive. While you re-edit a developed photo, the same recipe is auto-saved as a draft on the phone.
 
 Here is a complete look:
 

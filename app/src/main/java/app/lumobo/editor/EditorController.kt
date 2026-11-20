@@ -441,7 +441,8 @@ class EditorController(
     fun applyLook(look: app.lumobo.data.SavedLook) {
         profile = Profiles.byId(look.filmId)
         adj = look.adj
-        fx = look.fx.copy(frame = fx.frame, dateStamp = fx.dateStamp)
+        // Star-eraser marks belong to this photo, never to a look.
+        fx = look.fx.copy(frame = fx.frame, dateStamp = fx.dateStamp, starMask = fx.starMask)
         settings.lastFilmId = profile.id
         invalidate()
         changed()

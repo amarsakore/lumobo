@@ -133,7 +133,15 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_EDIT, Intent.ACTION_VIEW -> intent.data
             else -> null
         }
-        if (uri != null) push(Screen.Editor(uri))
+        if (uri != null) {
+            // A photo shared or opened from another app replaces whatever was open, so Back
+            // returns to the gallery instead of to an older editor.
+            while (stack.size > 1) {
+                val gone = stack.removeAt(stack.lastIndex)
+                if (gone != Screen.Gallery) removedKeys.add(gone.key)
+            }
+            push(Screen.Editor(uri))
+        }
     }
 
     private fun push(s: Screen) {
