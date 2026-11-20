@@ -1,17 +1,17 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-dark.svg">
-    <img alt="Emulsion" src="docs/logo/logo-light.svg" width="440">
+    <img alt="Lumobo" src="docs/logo/logo-light.svg" width="400">
   </picture>
 </p>
 
 <p align="center">
-  <b>Film simulations and classic camera looks for Android.</b><br>
-  57 film stocks &amp; camera styles · GPU grain, halation &amp; bloom · full-resolution export
+  <b>Film simulations, classic camera looks and lens effects for Android.</b><br>
+  66 looks · 10 lens recipes · grain, halation &amp; bloom · full-resolution export
 </p>
 
 <p align="center">
-  <a href="https://github.com/amarsakore/emulsion/releases/latest"><img src="https://img.shields.io/github/v/release/amarsakore/emulsion?label=download&color=F5B841&style=flat-square" alt="Download"></a>
+  <a href="https://github.com/amarsakore/lumobo/releases/latest"><img src="https://img.shields.io/github/v/release/amarsakore/lumobo?label=download&color=F5B841&style=flat-square" alt="Download"></a>
   <img src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 10+">
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/OpenGL%20ES-3.0-5586A4?style=flat-square&logo=opengl&logoColor=white" alt="OpenGL ES 3">
@@ -20,27 +20,37 @@
 
 <table>
   <tr>
-    <td width="36%"><img src="docs/examples/showcase-1-gr-positive-film.jpg" alt="Ricoh GR Positive Film with a 35mm film-scan frame and date stamp"></td>
-    <td width="32%"><img src="docs/examples/showcase-2-cinestill-800t.jpg" alt="CineStill 800T with red halation"></td>
-    <td width="32%"><img src="docs/examples/showcase-3-polaroid-600.jpg" alt="Polaroid 600 with instant frame"></td>
+    <td width="50%"><img src="docs/examples/showcase-1-daydream.jpg" alt="Daydream look, square crop, red light leak and date stamp"></td>
+    <td width="50%"><img src="docs/examples/showcase-2-twinkle.jpg" alt="Rose Film with the Twinkle star filter"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>GR Positive Film</b> · 35mm film-scan frame · LED date stamp</sub></td>
-    <td align="center"><sub><b>CineStill 800T</b> · red halation · grain</sub></td>
+    <td align="center"><sub><b>Daydream</b> · 1:1 crop · red corner leak · LED date stamp</sub></td>
+    <td align="center"><sub><b>Rose Film</b> · Twinkle star filter · straightened 4°</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/examples/showcase-3-polaroid-600.jpg" alt="Polaroid 600 with instant frame"></td>
+    <td><img src="docs/examples/showcase-4-cinestill-800t.jpg" alt="CineStill 800T with red halation"></td>
+  </tr>
+  <tr>
     <td align="center"><sub><b>Polaroid 600</b> · instant frame · bloom · vignette</sub></td>
+    <td align="center"><sub><b>CineStill 800T</b> · red halation · grain</sub></td>
   </tr>
 </table>
 <p align="center"><sub>Straight out of the app, developed at full resolution on the phone.</sub></p>
 
 ## Features
 
-- **57 looks in 8 families.** Fujifilm simulations (Provia, Velvia, Astia, Classic Chrome, Classic Neg, Nostalgic Neg, Reala Ace, Eterna, Acros…), Ricoh GR image controls, Kodak and Fuji film stocks, cinema stocks, instant film, Ilford B&amp;W, and camera styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
-- **Real film structure, not just a colour filter.** Clumped, luminance-weighted grain with dye-cloud colour noise, red halation around highlights, Pro-Mist-style bloom, lens vignetting, lateral chromatic aberration and light leaks.
-- **Frames and imprints.** Instant-film border, plain white border or a full 35mm scan with sprocket holes and edge printing, plus an orange seven-segment LED date stamp taken from the photo's capture date.
-- **Built-in gallery.** Browse your library by month and album, keep your developed shots in their own tab, and share or delete from the viewer. You can also send a photo to Emulsion from any app with Share.
-- **Editing.** Film strength, exposure, contrast, highlights, shadows, warmth, tint, saturation and fade. Hold the image to compare with the original.
-- **What you see is what you save.** The preview and the export run the same GPU pipeline. Photos are developed at full sensor resolution (tested up to 28&nbsp;MP) and saved as high-quality JPEGs in `Pictures/Emulsion` with the original EXIF kept.
-- **Fast and offline.** About 20–40&nbsp;ms per preview frame on a modern phone. Nothing is uploaded anywhere.
+- **66 looks in 9 families.** Moody **Vibes** recipes (Daydream, Basement Tape, Summer '99, Night Drive…), Fujifilm simulations (Provia, Velvia, Classic Chrome, Classic Neg, Nostalgic Neg, Acros…), Ricoh GR image controls, Kodak and Fuji film stocks, cinema stocks, instant film, Ilford B&amp;W, and camera styles such as disposable, Y2K CCD digicam, Leica M, Hasselblad, Contax T2 and Lomo LC-A.
+- **Film texture on every photo.** Each look gets grain, halation and bloom in its own flavour. Overall strength is set in Settings.
+- **Lens recipes.** Fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic streaks, tilt-shift, soft focus and Petzval-style swirl. Each recipe can be fine-tuned.
+- **Film and optical effects.** Clumped, luminance-weighted grain with dye-cloud colour, red halation, Pro-Mist bloom, vignette, chromatic aberration and four light-leak styles.
+- **Crop and straighten.** Aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), a Lightroom-style straighten dial with auto-fill, flips and 90° rotation.
+- **Undo and redo** for every change. A whole slider drag counts as one step.
+- **Re-edit any time.** Every developed photo stores its full recipe: original photo, look, sliders, effects, lens and crop. *Edit Again* picks up exactly where you left off.
+- **Frames and imprints.** Instant border, white border or a 35mm film scan with sprocket holes, plus a seven-segment LED date stamp in your choice of colour and format.
+- **Built-in gallery and viewer.** Browse by month and album, keep developed shots in their own tab, and pinch to zoom.
+- **Useful settings.** Film-texture strength, start with your last look, date stamp defaults, default frame, JPEG quality, export size, keep or strip location and camera data, grid size, screenshots filter and haptics.
+- **Fast, private and offline.** About 20–40&nbsp;ms per preview on a modern phone, and the same GPU pipeline renders the full-resolution export. Nothing is uploaded.
 
 ## Before / after
 
@@ -60,32 +70,62 @@
 ## The app
 
 <p align="center">
-  <img src="docs/screenshots/editor-films.jpg" width="30%" alt="Film picker">
-  &nbsp;
-  <img src="docs/screenshots/editor-effects.jpg" width="30%" alt="Film and lens effects">
-  &nbsp;
-  <img src="docs/screenshots/editor-frame.jpg" width="30%" alt="Frames and date stamp">
+  <img src="docs/screenshots/editor-films.jpg" width="24%" alt="Film picker">
+  <img src="docs/screenshots/editor-lens.jpg" width="24%" alt="Lens recipes">
+  <img src="docs/screenshots/editor-crop.jpg" width="24%" alt="Crop and straighten">
+  <img src="docs/screenshots/settings.jpg" width="24%" alt="Settings">
 </p>
 
 ## Install
 
-Download `Emulsion.apk` from the [latest release](https://github.com/amarsakore/emulsion/releases/latest) and open it on your phone (allow installs from your browser or file manager when asked). Requires Android 10 or newer with OpenGL ES 3.0.
+Download `Lumobo.apk` from the [latest release](https://github.com/amarsakore/lumobo/releases/latest) and open it on your phone (allow installs from your browser or file manager when asked). Requires Android 10 or newer with OpenGL ES 3.0.
 
 Or with a phone connected over USB debugging:
 
 ```bash
-adb install -r Emulsion.apk
+adb install -r Lumobo.apk
 ```
 
-## The film library
+## Lens recipes
 
-The grids below show colour only, so you can compare the looks directly. Grain, halation and frames are added on top in the app, and every look's defaults can be adjusted.
+| Recipe | What it does |
+|---|---|
+| **Fisheye** | Ultra-wide fisheye bulge, full frame. |
+| **Circle Eye** | Circular fisheye with a black surround. |
+| **Wide 24** | Gentle wide-angle barrel distortion. |
+| **Twinkle** | 4-point star filter. Makes water and lights sparkle. |
+| **Starburst** | 6-point star filter for sun and street lights. |
+| **Sparkle** | Short 8-point glints on every highlight. |
+| **Anamorphic** | Cinematic horizontal blue streaks from lights. |
+| **Tilt-Shift** | Miniature look with a sharp focus band. |
+| **Soft Focus** | Dreamy diffusion, like a vintage portrait lens. |
+| **Swirl** | Petzval-style swirling, soft edges. |
+
+## The look library
+
+The grids below show colour only, so you can compare the looks directly. Grain, halation, lens effects and frames are added on top in the app.
+
+### Vibes: moody analog recipes
+
+<img src="docs/examples/grid-vibes.jpg" alt="Vibes: moody analog recipes" width="100%">
+
+| Look | Code | Character |
+|---|---|---|
+| **Daydream** | `DRM` | Soft pastel warmth, glowing highlights and a stray red leak. |
+| **Basement Tape** | `BT` | Late-night snapshot. Teal shadows, amber glow, heavy corners. |
+| **Summer '99** | `S99` | Point-and-shoot holiday prints. Sunny, saturated, date-stamped. |
+| **Night Drive** | `ND` | Neon-soaked and cinematic. Cyan night, glowing red halos. |
+| **Golden Hour** | `GH` | Late sun forever. Honeyed highlights and a warm haze. |
+| **Blue Hour** | `BH` | Cool, quiet and a little melancholic. |
+| **Faded Memory** | `FM` | A print left in the sun. Washed, creamy and nostalgic. |
+| **Rose Film** | `RF` | Experimental stock with rosy highlights and cool shadows. |
+| **Noir** | `NOIR` | Hard-boiled black & white with glowing highlights. |
 
 ### Fujifilm film simulations
 
 <img src="docs/examples/grid-fujifilm.jpg" alt="Fujifilm film simulations" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **Provia** | `STD` | Standard. Faithful colour with a gentle slide-film punch. |
 | **Velvia** | `V` | Vivid. Saturated landscape slide film with deep blacks and rich skies. |
@@ -108,7 +148,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-ricoh.jpg" alt="Ricoh GR image controls" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **GR Standard** | `STD` | The GR's clean, crisp default rendering. |
 | **Positive Film** | `PF` | Slide film punch. Warm, saturated, contrasty with yellow-tinted highlights. |
@@ -123,7 +163,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-kodak.jpg" alt="Kodak" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **Portra 400** | `P400` | The portrait standard. Warm skin, soft contrast, pastel greens. |
 | **Portra 160** | `P160` | Finer and cooler than 400. Clean pastel daylight. |
@@ -141,7 +181,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-fuji-stock.jpg" alt="Fuji film stocks" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **Superia 400** | `S400` | Fuji's consumer classic. Cool greens and that tell-tale cyan shadow. |
 | **Pro 400H** | `400H` | Wedding-photographer favourite. Airy, minty greens, soft pastel skin. |
@@ -151,7 +191,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-cinema.jpg" alt="Cinema" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **CineStill 800T** | `800T` | Tungsten cine film without remjet. Cool cast and glowing red halation. |
 | **CineStill 50D** | `50D` | Daylight cine stock. Clean, crisp and saturated with a soft glow. |
@@ -163,7 +203,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-instant.jpg" alt="Instant" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **Polaroid 600** | `600` | Instant integral film. Creamy whites, inky blue-black, dreamy colour. |
 | **SX-70** | `SX` | Vintage instant. Warm, washed-out and soft-focus. |
@@ -173,7 +213,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-cameras.jpg" alt="Camera styles" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **Disposable** | `QS` | Single-use flash camera. Warm, grainy, vignetted, date-stamped. |
 | **CCD Digicam** | `CCD` | Y2K compact digital. Cool, punchy, bright highlights with a CCD glow. |
@@ -187,7 +227,7 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 <img src="docs/examples/grid-ilford.jpg" alt="Ilford black & white" width="100%">
 
-| Film | Code | Character |
+| Look | Code | Character |
 |---|---|---|
 | **HP5 Plus 400** | `HP5` | Versatile, forgiving B&W with classic medium grain. |
 | **FP4 Plus 125** | `FP4` | Fine-grain, medium-contrast B&W with lovely mid-tones. |
@@ -196,34 +236,42 @@ The grids below show colour only, so you can compare the looks directly. Grain, 
 
 ## How it works
 
-Each look is a small, readable recipe in [`Profiles.kt`](film/src/main/kotlin/app/emulsion/film/Profiles.kt) evaluated by a film model in [`Look.kt`](film/src/main/kotlin/app/emulsion/film/Look.kt):
+Each look is a small, readable recipe in [`Profiles.kt`](film/src/main/kotlin/app/lumobo/film/Profiles.kt) evaluated by a film model in [`Look.kt`](film/src/main/kotlin/app/lumobo/film/Look.kt):
 
 1. **Exposure and white balance** in linear light, with a soft film shoulder instead of hard clipping.
-2. **Tone curve**: a display-referred S-curve (contrast, shadows, highlights, blacks, whites). It blends a per-channel response, which gives film's saturation and colour crossover, with a luminance-preserving one that keeps hues stable. Optional per-channel curves handle effects like cross-processing.
-3. **Colour** in OKLCh: global and tone-dependent saturation, plus hue bands that shift, saturate or darken specific colours. This is how Classic Chrome gets its teal skies and olive greens.
-4. **Colour casts** pushed into shadows, mids and highlights in OKLab, mostly on near-neutral tones so saturated subjects keep their identity.
+2. **Tone curve**: a display-referred S-curve that blends a per-channel response (film's saturation and colour crossover) with a luminance-preserving one (stable hues).
+3. **Colour** in OKLCh: global and tone-dependent saturation, plus hue bands that shift, saturate or darken specific colours.
+4. **Colour casts** in shadows, mids and highlights, mostly on near-neutral tones so saturated subjects keep their identity.
 5. **Gamut mapping** that reduces chroma at constant lightness and hue, then **print levels** for faded blacks or creamy whites.
 
-The model is baked into a **64³ 3D LUT**. An OpenGL ES 3 shader ([`Shaders.kt`](app/src/main/java/app/emulsion/render/Shaders.kt)) applies it together with the user adjustments and the optical effects. Grain comes from a tileable, gaussian-clumped noise field sized relative to the frame, so the preview and the full-resolution export show the same grain. Halation and bloom are blurred at a fixed working resolution from the resident preview texture, so they also match exactly.
+The model is baked into a **64³ 3D LUT**. An OpenGL ES 3 shader ([`Shaders.kt`](app/src/main/java/app/lumobo/render/Shaders.kt)) applies it together with the user adjustments, crop and straighten, lens projection and the optical passes:
+
+- **Halation and bloom** blur thresholded highlights at a fixed working resolution, so the preview and the export glow identically.
+- **Star filters and anamorphic streaks** first isolate *glints* (highlights brighter than their surroundings), then draw energy-normalised rays along each arm. Sparkles on water twinkle, while big bright areas don't smear.
+- **Tilt-shift, soft focus and swirl** blend in a graded, blurred layer. **Fisheye** uses a true tangent projection, and the circular version maps the whole frame into the circle.
+- **Grain** comes from a tileable, gaussian-clumped noise field sized to the frame.
+
+Every developed JPEG carries its edit recipe in EXIF, which is what makes *Edit Again* non-destructive.
 
 Here is a complete look:
 
 ```kotlin
 FilmProfile(
-    "classic_chrome", "Classic Chrome", "CC", Category.FUJIFILM,
-    "Documentary slide look. Muted colour, hard shadows, deep teal skies.",
+    "vibe_daydream", "Daydream", "DRM", Category.VIBES,
+    "Soft pastel warmth, glowing highlights and a stray red leak.",
     Look(
-        curve = Curve(contrast = 1.12f, shadows = -0.28f, highlights = -0.06f, blacks = -0.1f),
-        rgbCurveMix = 0.5f, saturation = 0.80f, highlightSat = 0.85f,
+        temp = 0.06f,
+        curve = Curve(contrast = 0.92f, shadows = 0.10f, highlights = -0.12f, whites = -0.15f),
+        rgbCurveMix = 0.5f, saturation = 0.96f,
         bands = listOf(
-            Band(Hue.RED, 30f, shift = 2f, sat = 0.85f, light = -0.01f),
-            Band(Hue.SKIN, 25f, sat = 0.96f),
-            Band(Hue.YELLOW, 30f, shift = -6f, sat = 0.78f),
-            Band(Hue.FOLIAGE, 40f, shift = -10f, sat = 0.72f, light = -0.02f),
-            Band(Hue.SKY, 50f, shift = -8f, sat = 0.88f, light = -0.07f),
+            Band(Hue.SKIN, 30f, shift = 2f, sat = 0.98f, light = 0.02f),
+            Band(Hue.FOLIAGE, 40f, shift = -4f, sat = 0.85f),
+            Band(Hue.SKY, 50f, shift = -6f, sat = 0.92f),
         ),
-        shadowTone = Tone(205f, 0.012f), highlightTone = Tone(80f, 0.010f),
+        shadowTone = Tone(205f, 0.016f), highlightTone = Tone(70f, 0.030f),
+        black = Rgb(0.045f, 0.04f, 0.04f), white = Rgb(1f, 0.98f, 0.95f),
     ),
+    Effects(grain = 0.24f, grainSize = 0.4f, halation = 0.18f, bloom = 0.38f, leak = 0.42f, leakStyle = 1, dateStamp = true),
 ),
 ```
 
@@ -236,7 +284,7 @@ Requirements: JDK 17 and the Android SDK (platform 35).
 ./gradlew :film:test               # colour-engine tests
 ```
 
-The colour engine is a plain Kotlin/JVM module, so you can tune looks on your computer without a phone:
+The colour engine is a plain Kotlin/JVM module, so you can tune looks on your computer:
 
 ```bash
 # Render every look onto your own photos, 6 per sheet
@@ -254,21 +302,21 @@ The colour engine is a plain Kotlin/JVM module, so you can tune looks on your co
 film/                      Pure Kotlin colour science (no Android dependencies)
   ColorMath.kt             sRGB transfer, OKLab/OKLCh, fast lookup tables
   Look.kt                  Curve, Look and CompiledLook (film model and LUT baking)
-  Profiles.kt              Every film and camera look
+  Profiles.kt              Every look, lens recipes, film-texture flavours, geometry
   Adjustments.kt           User adjustments, LUT cache, grain field generator
 app/
-  render/GlRenderer.kt     EGL off-screen renderer: LUT, glow passes, export
-  render/Shaders.kt        GLSL: film pipeline, grain, halation, bloom, lens effects
+  render/GlRenderer.kt     EGL off-screen renderer: LUT, glow / star / blur passes, export
+  render/Shaders.kt        GLSL: film pipeline, lens projection, optics, grain
   render/Overlays.kt       LED date stamp and frames
-  render/Images.kt         Decoding (EXIF-aware, sRGB) and saving with metadata
-  editor/                  Editor state, render scheduling, thumbnails
-  ui/                      Compose screens: gallery, editor, viewer
+  render/Images.kt         Decoding (EXIF-aware, sRGB) and saving with recipe + metadata
+  editor/                  Editor state, undo/redo, recipes, re-edit resolution
+  ui/                      Compose screens: gallery, editor, viewer, settings
 docs/                      Logo, examples, screenshots
 ```
 
 ## Disclaimer
 
-Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax and Lomo are trademarks of their respective owners. Emulsion is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
+Fujifilm, Provia, Velvia, Astia, Acros, Eterna, Superia, Ricoh, GR, Kodak, Portra, Ektar, Kodachrome, Ektachrome, Tri-X, T-Max, CineStill, Polaroid, Instax, Ilford, Leica, Hasselblad, Contax and Lomo are trademarks of their respective owners. Lumobo is an independent project and is not affiliated with or endorsed by any of them. The looks are original recreations of each film's or camera's well-known character. They contain no proprietary data.
 
 ## License
 
