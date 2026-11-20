@@ -545,8 +545,8 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
         }
         LazyRow(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             items(films, key = { it.id }) { f ->
                 val selected = f.id == p.id
@@ -566,7 +566,7 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
 
 @Composable
 private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, adjustable: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(74.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(82.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
                 .size(74.dp)
@@ -594,7 +594,7 @@ private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolea
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            profile.name, fontSize = 10.5.sp, lineHeight = 12.sp, maxLines = 2, textAlign = TextAlign.Center,
+            profile.name, fontSize = 10.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
             color = if (selected) Palette.Text else Palette.TextDim,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )

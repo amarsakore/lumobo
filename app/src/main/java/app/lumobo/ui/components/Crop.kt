@@ -198,8 +198,8 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
         androidx.compose.runtime.LaunchedEffect(geo, mode == CropMath.NONE, dw, dh) {
             if (mode != CropMath.NONE) return@LaunchedEffect
             val target = min((bw - 2 * pad) / (geo.width * dw), (bh - 2 * pad) / (geo.height * dh)).coerceIn(1f, 12f)
-            val tcx = if (target <= 1.001f) 0.5f else (geo.left + geo.right) / 2f
-            val tcy = if (target <= 1.001f) 0.5f else (geo.top + geo.bottom) / 2f
+            val tcx = (geo.left + geo.right) / 2f
+            val tcy = (geo.top + geo.bottom) / 2f
             val spec = androidx.compose.animation.core.tween<Float>(320, easing = androidx.compose.animation.core.FastOutSlowInEasing)
             kotlinx.coroutines.coroutineScope {
                 launch { zoom.animateTo(target, spec) }
@@ -216,8 +216,8 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
             val target = min((bw - 2 * pad) / (g.width * dw), (bh - 2 * pad) / (g.height * dh)).coerceIn(1f, 12f)
             scope.launch {
                 zoom.snapTo(target)
-                cx.snapTo(if (target <= 1.001f) 0.5f else (g.left + g.right) / 2f)
-                cy.snapTo(if (target <= 1.001f) 0.5f else (g.top + g.bottom) / 2f)
+                cx.snapTo((g.left + g.right) / 2f)
+                cy.snapTo((g.top + g.bottom) / 2f)
             }
         }
 
@@ -281,8 +281,8 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
                                 moving = true
                                 mode = target
                             }
-                            c.consume()
                             val d = c.positionChange()
+                            c.consume()
                             if (mode == CropMath.NONE) continue
                             val g = work[0]
                             val ratio = CropMath.lockedRatio(g.aspect, image.width, image.height)
@@ -319,7 +319,7 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
             val t = sy(g.top)
             val r = sx(g.right)
             val b = sy(g.bottom)
-            val shade = Color.Black.copy(alpha = 0.62f)
+            val shade = Color.Black.copy(alpha = 0.5f)
             drawRect(shade, Offset(0f, 0f), Size(size.width, t))
             drawRect(shade, Offset(0f, b), Size(size.width, size.height - b))
             drawRect(shade, Offset(0f, t), Size(l, b - t))
