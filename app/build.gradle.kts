@@ -12,8 +12,8 @@ android {
         applicationId = "app.lumobo"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.6"
+        versionCode = 16
+        versionName = "1.6.1"
     }
 
     buildTypes {

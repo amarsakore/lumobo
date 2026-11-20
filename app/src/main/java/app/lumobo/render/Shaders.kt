@@ -40,6 +40,7 @@ uniform sampler2D uSrc;
 uniform vec3 uGain;
 uniform int uMode;
 uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
+uniform float uBright; // linear luminance of this photo's brightest highlights
 $COMMON
 // Glint detection works on the photo as shot (no exposure gain), so the star count stays
 // stable however much the exposure slider is pushed.
@@ -58,21 +59,21 @@ void main() {
     if (uMode == 1) { fragColor = vec4(lin * smoothstep(0.18, 0.95, l), 1.0); return; }
     if (uMode == 3) { fragColor = vec4(lin, 1.0); return; }
     if (uMode == 4) { fragColor = vec4(vec3(min(lin.r, min(lin.g, lin.b))), 1.0); return; }
-    // Glints: a near-clipped point that is much brighter than both its immediate ring and the
-    // wider neighbourhood. Sun sparkles on water and street lamps qualify; a bright sky, a
-    // skylight roof or sunlit foliage do not, so they no longer explode into a mesh of rays.
+    // Glints (the 1.1 recipe, which gave crisp stars): bright AND brighter than the ring
+    // around them, so sun on glass and water, lamps and sparkles make stars. Measured on the
+    // photo as shot, so the star count doesn't jump with the exposure slider.
     float l0 = dot(toLin(texture(uSrc, vUv).rgb), LUMA);
-    float hot = smoothstep(0.70, 1.0, l0);
-    if (hot <= 0.0) { fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
-    l = l0;
-    // Small or medium highlight (brighter than a 1% or 2% ring) that does not sit inside a
-    // big bright region (checked with a 4.5% ring).
-    float r1 = ringLuma(uPeak * 0.6, 2.0);
-    float r2 = ringLuma(uPeak * 2.0, 3.0);
+    float r1 = ringLuma(uPeak, 2.0);
+    // Relative to this photo's own brightest highlights, so stars land on its brightest
+    // parts whether the photo is bright, dim or flat.
+    float hi = uBright;
+    float k = smoothstep(hi * 0.62, hi, l0) * smoothstep(0.02 * hi, 0.3 * hi, max(l0 - r1, 0.0));
+    // Only a big uniform bright area (an overcast sky, a white wall) is skipped, so it
+    // can't explode into a mesh of rays.
     float r3 = ringLuma(uPeak * 4.2, 4.0);
-    float iso = smoothstep(0.18, 0.55, max(l - r1, l - r2));
-    float open = smoothstep(0.12, 0.45, l - r3);
-    fragColor = vec4(lin * hot * iso * open * 1.6, 1.0);
+    float open = smoothstep(0.015 * hi, 0.12 * hi, l0 - r3);
+    float w = k * k * 3.0 * open / max(hi, 0.35);
+    fragColor = vec4(lin * w, 1.0);
 }
 """
 
@@ -111,7 +112,7 @@ uniform vec3 uTint;
 void main() {
     // Density control: many glints (sunlit leaves, a skylight roof) -> proportionally fainter rays.
     float mean = dot(textureLod(uTex, vec2(0.5), 12.0).rgb, vec3(0.3333));
-    float density = 1.0 / (1.0 + mean * 90.0);
+    float density = 1.0 / (1.0 + mean * 30.0);
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);

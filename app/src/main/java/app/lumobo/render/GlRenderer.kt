@@ -201,10 +201,40 @@ class GlRenderer {
         previewTex = uploadBitmap(bitmap, mipmaps = true)
         previewW = bitmap.width
         previewH = bitmap.height
+        brightLevel = brightestLevel(bitmap)
         val s = FX_LONG_EDGE.toFloat() / max(previewW, previewH)
         val w = max(16, (previewW * s).roundToInt())
         val h = max(16, (previewH * s).roundToInt())
         if (w != fxW || h != fxH) allocFx(w, h)
+    }
+
+    /** Linear luminance of the photo's brightest highlights (top 0.3%), where stars go. */
+    private var brightLevel = 1f
+
+    private fun brightestLevel(bmp: Bitmap): Float {
+        val hist = IntArray(256)
+        val step = max(1, kotlin.math.sqrt(bmp.width.toDouble() * bmp.height / 65536.0).toInt())
+        var n = 0
+        var y = 0
+        val row = IntArray(bmp.width)
+        while (y < bmp.height) {
+            bmp.getPixels(row, 0, bmp.width, 0, y, bmp.width, 1)
+            var x = 0
+            while (x < bmp.width) {
+                val c = row[x]
+                val l = (0.2126f * ((c shr 16) and 255) + 0.7152f * ((c shr 8) and 255) + 0.0722f * (c and 255)).toInt()
+                hist[l.coerceIn(0, 255)]++
+                n++
+                x += step
+            }
+            y += step
+        }
+        var acc = 0
+        var v = 255
+        while (v > 0) { acc += hist[v]; if (acc >= n * 0.003f) break; v-- }
+        val srgb = v / 255f
+        val lin = if (srgb <= 0.04045f) srgb / 12.92f else Math.pow(((srgb + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+        return lin.coerceIn(0.12f, 1f)
     }
 
     private fun allocFx(w: Int, h: Int) {
@@ -307,6 +337,7 @@ class GlRenderer {
             GLES30.glUniform3f(uniform(progPrefilter, "uGain"), g[0], g[1], g[2])
             GLES30.glUniform1i(uniform(progPrefilter, "uMode"), mode)
             GLES30.glUniform2f(uniform(progPrefilter, "uPeak"), 7f / fxW, 7f / fxH)
+            GLES30.glUniform1f(uniform(progPrefilter, "uBright"), brightLevel)
             drawQuad()
         }
         fun blur(srcTex: Int, dstFbo: Int, dx: Float, dy: Float, sigma: Float) {
@@ -377,14 +408,14 @@ class GlRenderer {
             if (fx.star > 0f) {
                 val arms = (fx.starPoints / 2).coerceIn(2, 4)
                 val step = (0.7f + fx.starLength * 1.8f) * scale
-                val k = fx.star * 2.0f
+                val k = fx.star * 2.4f
                 for (i in 0 until arms) {
                     val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
                     arm(deg, step, 48, 0.065f, k, k * 0.97f, k * 0.92f)
                 }
             }
             if (fx.streak > 0f) {
-                val k = fx.streak * 2.4f
+                val k = fx.streak * 2.8f
                 arm(0.0, 1.7f * scale, 64, 0.045f, k * 0.35f, k * 0.6f, k)
             }
             GLES30.glDisable(GLES30.GL_BLEND)
