@@ -74,6 +74,7 @@ import app.lumobo.film.Grade
 import app.lumobo.film.Profiles
 import app.lumobo.film.Pt
 import app.lumobo.ui.components.panelScroll
+import app.lumobo.ui.components.PanelColumn
 import app.lumobo.ui.components.Chip
 import app.lumobo.ui.components.FilmSlider
 import app.lumobo.ui.theme.Palette
@@ -145,7 +146,7 @@ fun LightPanel(editor: EditorController, onCurves: () -> Unit) {
         ToolHeader("Light", onReset = {
             editor.updateAdj(a.copy(exposure = 0f, contrast = 0f, highlights = 0f, shadows = 0f, whites = 0f, blacks = 0f, fade = 0f))
         }, action = "AUTO", onAction = editor::autoTone, secondary = "CURVES", onSecondary = onCurves)
-        Column(Modifier.panelScroll().padding(top = 4.dp, bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
             FilmSlider("Exposure", a.exposure, { editor.updateAdj(editor.adj.copy(exposure = it)) }, format = { String.format(Locale.US, "%+.1f EV", it * 2f) })
             FilmSlider("Contrast", a.contrast, { editor.updateAdj(editor.adj.copy(contrast = it)) })
             FilmSlider("Highlights", a.highlights, { editor.updateAdj(editor.adj.copy(highlights = it)) })
@@ -162,7 +163,7 @@ fun ColorPanel(editor: EditorController) {
     val a = editor.adj
     Column(Modifier.fillMaxWidth()) {
         ToolHeader("Color", onReset = { editor.updateAdj(a.copy(temp = 0f, tint = 0f, vibrance = 0f, saturation = 0f)) })
-        Column(Modifier.panelScroll().padding(bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(bottom = 8.dp)) {
             FilmSlider("Temperature", a.temp, { editor.updateAdj(editor.adj.copy(temp = it)) })
             FilmSlider("Tint", a.tint, { editor.updateAdj(editor.adj.copy(tint = it)) })
             FilmSlider("Vibrance", a.vibrance, { editor.updateAdj(editor.adj.copy(vibrance = it)) })
@@ -197,7 +198,7 @@ fun MixerPanel(editor: EditorController) {
             Adjustments.MIXER_NAMES[band].uppercase(), style = Type.Label.copy(color = bandColors[band]),
             modifier = Modifier.padding(start = 20.dp, top = 6.dp),
         )
-        Column(Modifier.panelScroll().padding(bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(bottom = 8.dp)) {
             FilmSlider("Hue", a.mixerValue(band, 0), { editor.updateAdj(editor.adj.withMixer(band, 0, it)) })
             FilmSlider("Saturation", a.mixerValue(band, 1), { editor.updateAdj(editor.adj.withMixer(band, 1, it)) })
             FilmSlider("Luminance", a.mixerValue(band, 2), { editor.updateAdj(editor.adj.withMixer(band, 2, it)) })
@@ -256,7 +257,7 @@ fun GradingPanel(editor: EditorController) {
             ColorWheel("MIDTONES", g.midHue, g.midSat, { h, s -> set(editor.adj.grade.copy(midHue = h, midSat = s)) }, Modifier.weight(1f))
             ColorWheel("HIGHLIGHTS", g.highHue, g.highSat, { h, s -> set(editor.adj.grade.copy(highHue = h, highSat = s)) }, Modifier.weight(1f))
         }
-        Column(Modifier.panelScroll().padding(top = 2.dp, bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(top = 2.dp, bottom = 8.dp)) {
             FilmSlider("Blending", g.blending, { set(editor.adj.grade.copy(blending = it)) }, min = 0f, max = 1f, default = 0.5f)
             FilmSlider("Balance", g.balance, { set(editor.adj.grade.copy(balance = it)) })
         }
@@ -398,7 +399,7 @@ fun DetailPanel(editor: EditorController) {
         ToolHeader("Detail & glow", onReset = {
             editor.updateAdj(a.copy(texture = 0f, clarity = 0f, sharpen = 0f, dehaze = 0f, hdr = 0f, glow = 0f))
         })
-        Column(Modifier.panelScroll().padding(bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(bottom = 8.dp)) {
             FilmSlider("Texture", a.texture, { editor.updateAdj(editor.adj.copy(texture = it)) })
             FilmSlider("Clarity", a.clarity, { editor.updateAdj(editor.adj.copy(clarity = it)) })
             FilmSlider("Sharpen", a.sharpen, { editor.updateAdj(editor.adj.copy(sharpen = it)) }, min = 0f, max = 1f, default = 0f)

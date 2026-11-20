@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import app.lumobo.film.LensPreset
 import app.lumobo.ui.components.panelScroll
+import app.lumobo.ui.components.PanelColumn
 import app.lumobo.ui.components.AngleDial
 import androidx.compose.material.icons.outlined.Compare
 import androidx.compose.material.icons.outlined.Crop
@@ -127,6 +128,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -173,6 +176,9 @@ fun EditorScreen(
     val sheetState = remember { app.lumobo.ui.components.PanelSheet() }
     var comparing by remember { mutableStateOf(false) }
     var straightening by remember { mutableStateOf(false) }
+    // Preview: hide the panel and tool bar to see the photo as large as possible.
+    var preview by remember { mutableStateOf(false) }
+    BackHandler(enabled = preview) { preview = false }
     var toast by remember { mutableStateOf<Pair<String, Uri?>?>(null) }
     // What a just-picked film does, shown briefly over the photo.
     var filmNote by remember { mutableStateOf<FilmProfile?>(null) }
@@ -224,6 +230,12 @@ fun EditorScreen(
                     }
                 }
             }
+            RoundIconButton(
+                if (preview) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                if (preview) "Show tools" else "Preview photo", { preview = !preview },
+                Modifier.size(34.dp), background = if (preview) Palette.Amber.copy(alpha = 0.25f) else Color.Transparent,
+            )
+            Spacer(Modifier.width(4.dp))
             Box(
                 Modifier
                     .size(34.dp)
@@ -397,6 +409,12 @@ fun EditorScreen(
         // Never taller than it is for a 3:4 photo, so wide photos don't get a huge panel.
         val capH = conf.screenHeightDp - 170 - (conf.screenWidthDp - 12) / 0.75f
         val panelH = (conf.screenHeightDp - 170 - photoH).coerceIn(150f, maxOf(150f, capH)).dp
+        if (preview) Spacer(Modifier.navigationBarsPadding())
+        this@Column.AnimatedVisibility(
+            visible = !preview,
+            enter = androidx.compose.animation.expandVertically() + fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically() + fadeOut(),
+        ) {
         Column(Modifier.fillMaxWidth().background(Palette.Surface).navigationBarsPadding()) {
             Box(
                 Modifier.fillMaxWidth().height(14.dp).then(sheetDrag)
@@ -450,6 +468,7 @@ fun EditorScreen(
                     BottomTab(t.icon, t.label, active == t, { panel = t }, Modifier.width(66.dp))
                 }
             }
+        }
         }
     }
 }
@@ -622,7 +641,7 @@ private fun EffectsPanel(editor: EditorController) {
     val d = remember(editor.profile) { AppSettings.get(context).effectsFor(editor.profile) }
     Column(Modifier.fillMaxWidth()) {
         PanelHeader("Film & lens", editor::resetEffects)
-        Column(Modifier.panelScroll().padding(bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(bottom = 8.dp)) {
             FilmSlider("Grain", f.grain, { editor.updateFx(f.copy(grain = it)) }, min = 0f, max = 1f, default = d.grain)
             FilmSlider("Grain size", f.grainSize, { editor.updateFx(f.copy(grainSize = it)) }, min = 0f, max = 1f, default = d.grainSize, enabled = f.grain > 0f)
             FilmSlider("Colour grain", f.colorGrain, { editor.updateFx(f.copy(colorGrain = it)) }, min = 0f, max = 1f, default = d.colorGrain, enabled = f.grain > 0f && !editor.profile.isMono)
@@ -726,7 +745,7 @@ private fun LensPanel(editor: EditorController) {
                 }
             }
         }
-        Column(Modifier.panelScroll().padding(top = 4.dp, bottom = 8.dp)) {
+        PanelColumn(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
             if (f.distortion > 0f || selected in listOf(LensPreset.FISHEYE, LensPreset.CIRCLE, LensPreset.WIDE)) {
                 FilmSlider("Distortion", f.distortion, { editor.updateFx(f.copy(distortion = it)) }, min = 0f, max = 1f, default = 0f)
             }

@@ -126,6 +126,35 @@ fun Modifier.panelScroll(): Modifier {
     return this.verticalScroll(st)
 }
 
+/**
+ * Stack of a tool's controls that never shows one cut in half: when the panel is shorter than
+ * all of them, it stops after the last control that fits and marks the sheet as overflowing,
+ * so a swipe up reveals the rest.
+ */
+@Composable
+fun PanelColumn(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val sheet = LocalPanelSheet.current
+    DisposableEffect(sheet) { onDispose { sheet.overflow = false } }
+    androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
+        val cs = constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
+        val placeables = measurables.map { it.measure(cs) }
+        var h = 0
+        var shown = 0
+        for (p in placeables) {
+            if (constraints.hasBoundedHeight && h + p.height > constraints.maxHeight) break
+            h += p.height
+            shown++
+        }
+        val over = shown < placeables.size
+        if (over || !sheet.open) sheet.overflow = over
+        val w = if (constraints.hasBoundedWidth) constraints.maxWidth else placeables.maxOfOrNull { it.width } ?: 0
+        layout(w, maxOf(h, constraints.minHeight)) {
+            var y = 0
+            for (i in 0 until shown) { placeables[i].place(0, y); y += placeables[i].height }
+        }
+    }
+}
+
 @Composable
 fun FilmSlider(
     label: String,
