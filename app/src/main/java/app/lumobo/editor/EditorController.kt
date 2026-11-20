@@ -409,6 +409,31 @@ class EditorController(
         }
     }
 
+    /** Star eraser: while on, dragging on the photo paints areas that get no stars. */
+    var starBrush by mutableStateOf(false)
+
+    /** Paint the star eraser at ([nx], [ny]) of the shown frame (0..1), [radius] of its width. */
+    fun eraseStars(nx: Float, ny: Float, radius: Float) {
+        val g = geo
+        var u = g.left + nx * g.width
+        var v = g.top + ny * g.height
+        if (g.flipH) u = 1f - u
+        if (g.flipV) v = 1f - v
+        val (su, sv) = when (((g.rotation % 4) + 4) % 4) {
+            1 -> v to 1f - u
+            2 -> 1f - u to 1f - v
+            3 -> 1f - v to u
+            else -> u to v
+        }
+        val r = radius * (if (g.rotation % 2 == 1) g.height else g.width)
+        val m = fx.starMask
+        // Skip dabs that barely moved, so a long stroke stays light to store and draw.
+        if (m.size >= 3 && kotlin.math.hypot(m[m.size - 3] - su, m[m.size - 2] - sv) < r * 0.3f) return
+        updateFx(fx.copy(starMask = m + listOf(su, sv, r)))
+    }
+
+    fun clearStarMask() = updateFx(fx.copy(starMask = emptyList()))
+
     fun applyLook(look: app.lumobo.data.SavedLook) {
         profile = Profiles.byId(look.filmId)
         adj = look.adj

@@ -136,6 +136,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.foundation.gestures.detectDragGestures
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -196,7 +197,7 @@ fun EditorScreen(
     }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP) }
+    LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP); if (panel != Tool.LENS) editor.starBrush = false }
     LaunchedEffect(Unit) { if (note != null) toast = note to null }
     LaunchedEffect(toast) {
         if (toast != null) {
@@ -391,6 +392,36 @@ fun EditorScreen(
                                 modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
                                 resetKey = Triple(editor.fx.frame, editor.geo, panel),
                                 onHold = { comparing = it },
+                            )
+                        }
+                        if (panel == Tool.LENS && editor.starBrush && shown != null) {
+                            // Brush over the photo: paints where stars are erased.
+                            var brushAt by remember { mutableStateOf<Offset?>(null) }
+                            Box(
+                                Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)
+                                    .pointerInput(shown) {
+                                        val iw = shown.width.toFloat()
+                                        val ih = shown.height.toFloat()
+                                        fun paint(p: Offset) {
+                                            val sc = kotlin.math.min(size.width / iw, size.height / ih)
+                                            val nx = (p.x - (size.width - iw * sc) / 2f) / (iw * sc)
+                                            val ny = (p.y - (size.height - ih * sc) / 2f) / (ih * sc)
+                                            if (nx in 0f..1f && ny in 0f..1f) editor.eraseStars(nx, ny, 0.05f)
+                                        }
+                                        detectDragGestures(
+                                            onDragStart = { brushAt = it; paint(it) },
+                                            onDragEnd = { brushAt = null },
+                                            onDragCancel = { brushAt = null },
+                                        ) { ch, _ -> ch.consume(); brushAt = ch.position; paint(ch.position) }
+                                    }
+                                    .drawWithContent {
+                                        drawContent()
+                                        brushAt?.let {
+                                            val r = kotlin.math.min(size.width, size.height * shown.width / shown.height.toFloat()) * 0.05f
+                                            drawCircle(Color.White.copy(alpha = 0.25f), r, it)
+                                            drawCircle(Color.White, r, it, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+                                        }
+                                    },
                             )
                         }
                         androidx.compose.animation.AnimatedVisibility(
@@ -808,6 +839,13 @@ private fun LensPanel(editor: EditorController) {
             }
         }
         PanelColumn(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
+            if (f.star > 0f || f.streak > 0f) {
+                // Star eraser: paint on the photo where stars shouldn't appear.
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip(if (editor.starBrush) "Erasing · tap to finish" else "Erase stars", editor.starBrush, { editor.starBrush = !editor.starBrush })
+                    if (f.starMask.isNotEmpty()) Chip("Clear", false, { editor.clearStarMask() })
+                }
+            }
             if (f.distortion > 0f || selected in listOf(LensPreset.FISHEYE, LensPreset.CIRCLE, LensPreset.WIDE)) {
                 FilmSlider("Distortion", f.distortion, { editor.updateFx(f.copy(distortion = it)) }, min = 0f, max = 1f, default = 0f)
             }

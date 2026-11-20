@@ -201,40 +201,10 @@ class GlRenderer {
         previewTex = uploadBitmap(bitmap, mipmaps = true)
         previewW = bitmap.width
         previewH = bitmap.height
-        brightLevel = brightestLevel(bitmap)
         val s = FX_LONG_EDGE.toFloat() / max(previewW, previewH)
         val w = max(16, (previewW * s).roundToInt())
         val h = max(16, (previewH * s).roundToInt())
         if (w != fxW || h != fxH) allocFx(w, h)
-    }
-
-    /** Linear luminance of the photo's brightest highlights (top 0.3%), where stars go. */
-    private var brightLevel = 1f
-
-    private fun brightestLevel(bmp: Bitmap): Float {
-        val hist = IntArray(256)
-        val step = max(1, kotlin.math.sqrt(bmp.width.toDouble() * bmp.height / 65536.0).toInt())
-        var n = 0
-        var y = 0
-        val row = IntArray(bmp.width)
-        while (y < bmp.height) {
-            bmp.getPixels(row, 0, bmp.width, 0, y, bmp.width, 1)
-            var x = 0
-            while (x < bmp.width) {
-                val c = row[x]
-                val l = (0.2126f * ((c shr 16) and 255) + 0.7152f * ((c shr 8) and 255) + 0.0722f * (c and 255)).toInt()
-                hist[l.coerceIn(0, 255)]++
-                n++
-                x += step
-            }
-            y += step
-        }
-        var acc = 0
-        var v = 255
-        while (v > 0) { acc += hist[v]; if (acc >= n * 0.003f) break; v-- }
-        val srgb = v / 255f
-        val lin = if (srgb <= 0.04045f) srgb / 12.92f else Math.pow(((srgb + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
-        return lin.coerceIn(0.12f, 1f)
     }
 
     private fun allocFx(w: Int, h: Int) {
@@ -337,7 +307,6 @@ class GlRenderer {
             GLES30.glUniform3f(uniform(progPrefilter, "uGain"), g[0], g[1], g[2])
             GLES30.glUniform1i(uniform(progPrefilter, "uMode"), mode)
             GLES30.glUniform2f(uniform(progPrefilter, "uPeak"), 7f / fxW, 7f / fxH)
-            GLES30.glUniform1f(uniform(progPrefilter, "uBright"), brightLevel)
             drawQuad()
         }
         fun blur(srcTex: Int, dstFbo: Int, dx: Float, dy: Float, sigma: Float) {
@@ -384,10 +353,6 @@ class GlRenderer {
         }
         if (fx.star > 0f || fx.streak > 0f) {
             prefilter(2, fxFbo[6])
-            // Mip chain of the glint layer gives its mean (density) in one texture fetch.
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
-            GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_NEAREST)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fxFbo[7])
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -444,6 +409,9 @@ class GlRenderer {
         bind(8, GLES30.GL_TEXTURE_2D, fxTex[10], "uHaze")
         val curvesOn = !adj.curves.isIdentity
         bind(9, GLES30.GL_TEXTURE_2D, if (curvesOn) curveTexture(adj.curves) else grainTex, "uCurve")
+        val maskOn = fx.starMask.isNotEmpty() && (fx.star > 0f || fx.streak > 0f)
+        bind(10, GLES30.GL_TEXTURE_2D, if (maskOn) starMaskTexture(fx.starMask) else grainTex, "uStarMask")
+        GLES30.glUniform1f(uniform(p, "uMaskOn"), if (maskOn) 1f else 0f)
         val g = gains(adj)
         GLES30.glUniform1f(uniform(p, "uLutSize"), lutSize.toFloat())
         GLES30.glUniform1f(uniform(p, "uIntensity"), adj.intensity)
@@ -562,6 +530,50 @@ class GlRenderer {
 
     val previewSize get() = previewW to previewH
 
+    private var maskTex = 0
+    private var maskKey: List<Float>? = null
+
+    /** Star-eraser mask: soft discs painted by the user, in source uv, as a small texture. */
+    private fun starMaskTexture(mask: List<Float>): Int {
+        if (maskTex == 0) {
+            maskTex = genTexture()
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, maskTex)
+            texParams(GLES30.GL_LINEAR, GLES30.GL_LINEAR, GLES30.GL_CLAMP_TO_EDGE)
+        }
+        if (mask != maskKey) {
+            val n = MASK_SIZE
+            val aspect = if (previewH > 0) previewW.toFloat() / previewH else 1f
+            val a = ByteArray(n * n)
+            var i = 0
+            while (i + 2 < mask.size) {
+                val cx = mask[i] * n
+                val cy = mask[i + 1] * n
+                val rx = mask[i + 2] * n
+                val ry = rx * aspect
+                val x0 = (cx - rx).toInt().coerceIn(0, n - 1)
+                val x1 = (cx + rx).toInt().coerceIn(0, n - 1)
+                val y0 = (cy - ry).toInt().coerceIn(0, n - 1)
+                val y1 = (cy + ry).toInt().coerceIn(0, n - 1)
+                for (y in y0..y1) for (x in x0..x1) {
+                    val dx = (x + 0.5f - cx) / rx
+                    val dy = (y + 0.5f - cy) / ry
+                    val d = kotlin.math.sqrt(dx * dx + dy * dy)
+                    if (d < 1f) {
+                        val v = (((1f - d) / 0.35f).coerceIn(0f, 1f) * 255f).toInt()
+                        val idx = y * n + x
+                        if (v > (a[idx].toInt() and 255)) a[idx] = v.toByte()
+                    }
+                }
+                i += 3
+            }
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, maskTex)
+            GLES30.glPixelStorei(GLES30.GL_UNPACK_ALIGNMENT, 1)
+            GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_R8, n, n, 0, GLES30.GL_RED, GLES30.GL_UNSIGNED_BYTE, ByteBuffer.wrap(a))
+            maskKey = mask
+        }
+        return maskTex
+    }
+
     private fun curveTexture(curves: Curves): Int {
         if (curveTex == 0) {
             curveTex = genTexture()
@@ -621,5 +633,6 @@ class GlRenderer {
         private const val TAG = "LumoboGL"
         private const val GRAIN_SIZE = 512
         private const val FX_LONG_EDGE = 640
+        private const val MASK_SIZE = 256
     }
 }

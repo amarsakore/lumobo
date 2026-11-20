@@ -40,7 +40,6 @@ uniform sampler2D uSrc;
 uniform vec3 uGain;
 uniform int uMode;
 uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
-uniform float uBright; // linear luminance of this photo's brightest highlights
 $COMMON
 // Glint detection works on the photo as shot (no exposure gain), so the star count stays
 // stable however much the exposure slider is pushed.
@@ -59,30 +58,18 @@ void main() {
     if (uMode == 1) { fragColor = vec4(lin * smoothstep(0.18, 0.95, l), 1.0); return; }
     if (uMode == 3) { fragColor = vec4(lin, 1.0); return; }
     if (uMode == 4) { fragColor = vec4(vec3(min(lin.r, min(lin.g, lin.b))), 1.0); return; }
-    // Glints (the 1.1 recipe, which gave crisp stars): bright AND brighter than the ring
-    // around them, so sun on glass and water, lamps and sparkles make stars. Measured on the
-    // photo as shot, so the star count doesn't jump with the exposure slider.
-    float l0 = dot(toLin(texture(uSrc, vUv).rgb), LUMA);
-    float r1 = ringLuma(uPeak, 2.0);
-    // Relative to this photo's own brightest highlights, so stars land on its brightest
-    // parts whether the photo is bright, dim or flat.
-    float hi = uBright;
-    float k = smoothstep(hi * 0.62, hi, l0) * smoothstep(0.02 * hi, 0.3 * hi, max(l0 - r1, 0.0));
-    // Only a big uniform bright area (an overcast sky, a white wall) is skipped, so it
-    // can't explode into a mesh of rays.
-    float r3 = ringLuma(uPeak * 4.2, 4.0);
-    float open = smoothstep(0.015 * hi, 0.12 * hi, l0 - r3);
-    // Area check: a sparkle sits in a mostly darker region. Where the surroundings (a few
-    // percent of the frame) are mostly bright, like a skylight roof or a sunlit opening,
-    // nothing qualifies, so heavy light never turns into a mesh of rays.
-    float area = dot(toLin(textureLod(uSrc, vUv, 6.0).rgb), LUMA);
-    float lone = 1.0 - smoothstep(0.5 * hi, 0.8 * hi, area);
-    // Point-like lights (fairy lights, lamps, sparkles) get full stars; broad glowing patches
-    // (a headlight's flare) get softer ones, so rays stay fine instead of smearing into bands.
-    float near = dot(toLin(textureLod(uSrc, vUv, 3.5).rgb), LUMA);
-    float point = mix(0.8, 1.0, 1.0 - smoothstep(0.5, 0.95, near / max(l0, 1e-3)));
-    float w = k * k * 3.0 * open * lone * point / max(hi, 0.35);
-    fragColor = vec4(lin * w, 1.0);
+    // Glints, exactly as in 1.1: bright AND brighter than the surroundings, so sparkles on
+    // water or street lamps make stars while big bright areas don't smear.
+    float around = 0.0;
+    for (int i = 0; i < 8; i++) {
+        float a = float(i) * 0.7853982;
+        vec2 o = vec2(cos(a), sin(a)) * uPeak;
+        around += dot(toLin(textureLod(uSrc, vUv + o, 2.0).rgb) * uGain, LUMA);
+    }
+    around /= 8.0;
+    float peak = max(l - around, 0.0);
+    float k = smoothstep(0.6, 1.0, l) * smoothstep(0.02, 0.3, peak);
+    fragColor = vec4(lin * k * k * 3.0, 1.0);
 }
 """
 
@@ -119,11 +106,6 @@ uniform int uTaps;
 uniform float uDecay;
 uniform vec3 uTint;
 void main() {
-    // Density control: many glints (sunlit leaves, a skylight roof) -> proportionally fainter rays.
-    float mean = dot(textureLod(uTex, vec2(0.5), 12.0).rgb, vec3(0.3333));
-    // Many glints at once -> fewer, fainter rays (grows fast, so a few sparkles stay bright).
-    float m = mean * 25.0;
-    float density = 1.0 / (1.0 + m + m * m);
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
@@ -131,7 +113,7 @@ void main() {
         acc += (texture(uTex, vUv + uDir * fi).rgb + texture(uTex, vUv - uDir * fi).rgb) * w;
     }
     // Normalise by the kernel's total weight so rays carry the source's energy.
-    fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint * density, 1.0);
+    fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint, 1.0);
 }
 """
 
@@ -210,6 +192,8 @@ uniform int uLeakStyle;
 uniform float uDistort;
 uniform float uCircle;
 uniform float uStar;
+uniform sampler2D uStarMask;
+uniform float uMaskOn;
 uniform float uTilt;
 uniform float uFocusY;
 uniform float uFocusSize;
@@ -492,6 +476,8 @@ void main() {
     }
     if (uStar > 0.0) {
         vec3 st = texture(uStarTex, suv).rgb;
+        // Brushed-out areas get no stars or streaks.
+        if (uMaskOn > 0.5) st *= 1.0 - texture(uStarMask, suv).r;
         lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(st, 0.0, 1.0));
     }
     if (uLeak > 0.0) {

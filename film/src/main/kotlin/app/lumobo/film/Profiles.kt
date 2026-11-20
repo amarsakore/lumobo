@@ -42,12 +42,15 @@ data class Effects(
     val focusSize: Float = 0.25f,
     val softFocus: Float = 0f,
     val swirl: Float = 0f,
+    /** Areas where stars / streaks are erased: (x, y, radius) triples in source uv. */
+    val starMask: List<Float> = emptyList(),
 ) {
     /** Copy the lens recipe from [o] (lens choices survive film changes and effect resets). */
     fun withLensOf(o: Effects) = copy(
         lens = o.lens, distortion = o.distortion, fisheyeCircle = o.fisheyeCircle, star = o.star,
         starPoints = o.starPoints, starLength = o.starLength, starAngle = o.starAngle, streak = o.streak,
         tiltShift = o.tiltShift, focusY = o.focusY, focusSize = o.focusSize, softFocus = o.softFocus, swirl = o.swirl,
+        starMask = o.starMask,
     )
 }
 
@@ -68,7 +71,7 @@ enum class LensPreset(val label: String, val blurb: String) {
 
     fun applyTo(fx: Effects): Effects {
         // Reset only the lens recipe.
-        val base = fx.withLensOf(Effects()).copy(lens = ordinal)
+        val base = fx.withLensOf(Effects(starMask = fx.starMask)).copy(lens = ordinal)
         return when (this) {
             NONE -> base.copy(lens = 0)
             FISHEYE -> base.copy(distortion = 0.85f, vignette = maxOf(fx.vignette, 0.25f))
