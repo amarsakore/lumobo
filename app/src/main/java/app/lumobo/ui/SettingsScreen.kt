@@ -127,7 +127,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Lumobo 1.4", style = Type.Title.copy(fontSize = 15.sp))
+                        Text("Lumobo 1.4.1", style = Type.Title.copy(fontSize = 15.sp))
                         Text("${Profiles.all.size - 1} films and camera looks · source code on GitHub", style = Type.Body.copy(fontSize = 12.sp))
                     }
                     Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = Palette.TextDim, modifier = Modifier.size(18.dp))

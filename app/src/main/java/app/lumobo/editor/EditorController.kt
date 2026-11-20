@@ -266,11 +266,16 @@ class EditorController(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun buildThumbs(src: Bitmap) = withContext(Dispatchers.Default) {
-        val s = min(src.width, src.height)
-        val crop = Bitmap.createBitmap(src, (src.width - s) / 2, (src.height - s) / 2, s, s)
-        val small = Bitmap.createScaledBitmap(crop, THUMB, THUMB, true)
-        val px = IntArray(THUMB * THUMB)
-        small.getPixels(px, 0, THUMB, 0, 0, THUMB, THUMB)
+        // Keep the photo's own shape (clamped), so film previews match what you'll get.
+        val ar = (src.width.toFloat() / src.height).coerceIn(0.56f, 1.8f)
+        val tw = if (ar >= 1f) THUMB else (THUMB * ar).roundToInt()
+        val th = if (ar >= 1f) (THUMB / ar).roundToInt() else THUMB
+        val sw = min(src.width, (src.height * ar).roundToInt())
+        val sh = min(src.height, (src.width / ar).roundToInt())
+        val crop = Bitmap.createBitmap(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh)
+        val small = Bitmap.createScaledBitmap(crop, tw, th, true)
+        val px = IntArray(tw * th)
+        small.getPixels(px, 0, tw, 0, 0, tw, th)
         val rf = FloatArray(px.size) { ((px[it] shr 16) and 255) / 255f }
         val gf = FloatArray(px.size) { ((px[it] shr 8) and 255) / 255f }
         val bf = FloatArray(px.size) { (px[it] and 255) / 255f }
@@ -289,7 +294,7 @@ class EditorController(
                         ((o[1] * 255f).roundToInt().coerceIn(0, 255) shl 8) or
                         (o[2] * 255f).roundToInt().coerceIn(0, 255)
                 }
-                val bmp = Bitmap.createBitmap(out, THUMB, THUMB, Bitmap.Config.ARGB_8888).asImageBitmap()
+                val bmp = Bitmap.createBitmap(out, tw, th, Bitmap.Config.ARGB_8888).asImageBitmap()
                 withContext(Dispatchers.Main) { thumbs[p.id] = bmp }
             }
         }.awaitAll()
@@ -507,6 +512,6 @@ class EditorController(
     companion object {
         private const val TAG = "Lumobo"
         const val PREVIEW_EDGE = 2048
-        private const val THUMB = 200
+        private const val THUMB = 260
     }
 }

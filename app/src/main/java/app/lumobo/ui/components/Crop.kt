@@ -319,7 +319,7 @@ fun CropOverlay(image: ImageBitmap, geo: Geometry, onChange: (Geometry) -> Unit,
             val t = sy(g.top)
             val r = sx(g.right)
             val b = sy(g.bottom)
-            val shade = Color.Black.copy(alpha = 0.5f)
+            val shade = if (app.lumobo.ui.theme.Palette.dark) Color.Black.copy(alpha = 0.5f) else app.lumobo.ui.theme.Palette.Bg.copy(alpha = 0.62f)
             drawRect(shade, Offset(0f, 0f), Size(size.width, t))
             drawRect(shade, Offset(0f, b), Size(size.width, size.height - b))
             drawRect(shade, Offset(0f, t), Size(l, b - t))
@@ -422,7 +422,7 @@ fun AngleDial(
                 val med = d % (5 * tick) == 0
                 val h = when { major -> 18.dp.toPx(); med -> 12.dp.toPx(); else -> 7.dp.toPx() }
                 val fade = 1f - (abs(x - mid) / mid).coerceIn(0f, 1f) * 0.75f
-                val color = (if (d == 0) app.lumobo.ui.theme.Palette.Amber else Color.White).copy(alpha = (if (med) 0.9f else 0.45f) * fade)
+                val color = (if (d == 0) app.lumobo.ui.theme.Palette.Amber else app.lumobo.ui.theme.Palette.Text).copy(alpha = (if (med) 0.9f else 0.45f) * fade)
                 drawLine(color, Offset(x, base - h), Offset(x, base), if (major) 2.dp.toPx() else 1.dp.toPx())
             }
             drawLine(app.lumobo.ui.theme.Palette.Amber, Offset(mid, 0f), Offset(mid, size.height), 2.5.dp.toPx())

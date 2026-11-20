@@ -306,13 +306,13 @@ fun EditorScreen(
                         ) {
                             val n = filmNote
                             Column(
-                                Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.62f))
+                                Modifier.clip(RoundedCornerShape(14.dp)).background(Palette.Surface.copy(alpha = 0.92f))
                                     .padding(horizontal = 14.dp, vertical = 7.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(n?.name.orEmpty(), style = Type.Title.copy(fontSize = 13.sp))
                                 Text(
-                                    n?.blurb.orEmpty(), style = Type.Body.copy(color = Palette.Text.copy(alpha = 0.8f), fontSize = 11.5.sp, lineHeight = 15.sp),
+                                    n?.blurb.orEmpty(), style = Type.Body.copy(fontSize = 11.5.sp, lineHeight = 15.sp),
                                     textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -487,7 +487,7 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
     // Tap the selected film again to dial its strength (in place of the category row).
     var strengthOpen by remember { mutableStateOf(false) }
     val strength = strengthOpen && !p.isIdentity
-    Column(Modifier.fillMaxSize().padding(top = 2.dp, bottom = 6.dp), verticalArrangement = Arrangement.Center) {
+    Column(Modifier.fillMaxSize().padding(top = 4.dp, bottom = 4.dp)) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
             Crossfade(strength, label = "strength") { dial ->
                 if (dial) {
@@ -518,18 +518,25 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
         }
         Spacer(Modifier.height(6.dp))
         val listState = rememberLazyListState()
+        val (sw, sh) = editor.sourceSize
+        val aspect = if (sw > 0 && sh > 0) (sw.toFloat() / sh).coerceIn(0.56f, 1.8f) else 1f
         LaunchedEffect(category) {
             val i = films.indexOfFirst { it.id == p.id }
             listState.scrollToItem(if (i > 1) i - 1 else 0)
         }
+        // Previews fill the panel's spare height and take the photo's shape.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+        val thumbH = (maxHeight - 22.dp).coerceIn(64.dp, 150.dp)
+        val thumbW = (thumbH * aspect).coerceAtMost(170.dp)
         LazyRow(
             state = listState,
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.align(Alignment.Center),
         ) {
             items(films, key = { it.id }) { f ->
                 val selected = f.id == p.id
-                FilmCard(f, editor.thumbs[f.id], selected, adjustable = selected && !f.isIdentity && !strength) {
+                FilmCard(f, editor.thumbs[f.id], selected, adjustable = selected && !f.isIdentity && !strength, thumbW, thumbH) {
                     if (selected) {
                         if (!f.isIdentity) strengthOpen = !strength
                     } else {
@@ -540,15 +547,19 @@ private fun FilmsPanel(editor: EditorController, onPicked: (FilmProfile) -> Unit
                 }
             }
         }
+        }
     }
 }
 
 @Composable
-private fun FilmCard(profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, adjustable: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(88.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun FilmCard(
+    profile: FilmProfile, thumb: ImageBitmap?, selected: Boolean, adjustable: Boolean,
+    width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, onClick: () -> Unit,
+) {
+    Column(Modifier.width(maxOf(width, 72.dp)).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(80.dp)
+                .size(width, height)
                 .clip(RoundedCornerShape(14.dp))
                 .background(Palette.Surface2)
                 .border(if (selected) 2.dp else 0.dp, if (selected) Palette.Amber else Color.Transparent, RoundedCornerShape(14.dp)),

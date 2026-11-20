@@ -286,15 +286,18 @@ private fun PhotoGrid(images: List<MediaImage>, columns: Int, emptyText: String,
                                     (c.x / size.width).coerceIn(0f, 1f), (c.y / size.height).coerceIn(0f, 1f),
                                 )
                             }
-                            var sc = pinchScale * ev.calculateZoom()
-                            val cols = settings.gridColumns
-                            if (sc > 1.25f && cols > 2) { settings.gridColumns = cols - 1; sc *= (cols - 1f) / cols }
-                            else if (sc < 0.8f && cols < 6) { settings.gridColumns = cols + 1; sc *= (cols + 1f) / cols }
-                            pinchScale = sc.coerceIn(0.75f, 1.35f)
+                            pinchScale = (pinchScale * ev.calculateZoom()).coerceIn(0.7f, 1.5f)
                             ev.changes.forEach { it.consume() }
                         }
                     } while (ev.changes.any { it.pressed })
                     if (pinched) {
+                        // Settle: switch columns once, compensating the scale so the grid
+                        // continues smoothly from where the fingers left it.
+                        val cols = settings.gridColumns
+                        var sc = pinchScale
+                        if (sc > 1.12f && cols > 2) { settings.gridColumns = cols - 1; sc *= (cols - 1f) / cols }
+                        else if (sc < 0.9f && cols < 6) { settings.gridColumns = cols + 1; sc *= (cols + 1f) / cols }
+                        pinchScale = sc
                         val from = pinchScale
                         scope.launch {
                             androidx.compose.animation.core.animate(from, 1f, animationSpec = androidx.compose.animation.core.spring(stiffness = 500f)) { v, _ -> pinchScale = v }
@@ -344,39 +347,43 @@ private fun DateScroller(state: androidx.compose.foundation.lazy.grid.LazyGridSt
     val first = state.firstVisibleItemIndex.coerceIn(0, total - 1)
     val frac = first.toFloat() / (total - 1).coerceAtLeast(1)
     val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "scroller")
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxHeight().width(200.dp).graphicsLayer { this.alpha = alpha }) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxHeight().width(160.dp).graphicsLayer { this.alpha = alpha }) {
         val trackPx = constraints.maxHeight.toFloat()
         val handleH = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.toPx() }
         val y = (trackPx - handleH) * frac
         Row(
-            Modifier.align(Alignment.TopEnd).offset { androidx.compose.ui.unit.IntOffset(0, y.toInt()) }
-                .pointerInput(total, visible) {
-                    // Only grabbable while shown, so it never steals scrolls from the photos.
-                    if (total == 0 || !visible) return@pointerInput
-                    detectVerticalDragGestures(
-                        onDragStart = { dragging = true },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false },
-                    ) { ch, _ ->
-                        ch.consume()
-                        val pos = (y + ch.position.y - handleH / 2f).coerceIn(0f, trackPx - handleH)
-                        val target = ((pos / (trackPx - handleH)) * (total - 1)).toInt()
-                        scope.launch { state.scrollToItem(target) }
-                    }
-                },
+            Modifier.align(Alignment.TopEnd).offset { androidx.compose.ui.unit.IntOffset(0, y.toInt()) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                months[first].substringBefore(" ").take(3) + " " + months[first].substringAfter(" "),
-                style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold),
-                modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.Surface2).padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-            Spacer(Modifier.width(6.dp))
+            if (dragging || scrolling) {
+                Text(
+                    months[first].substringBefore(" ").take(3) + " " + months[first].substringAfter(" "),
+                    style = Type.Label.copy(color = Palette.Text, fontWeight = FontWeight.Bold),
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.Surface2).padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Box(
                 Modifier.padding(end = 4.dp).width(6.dp).height(44.dp).clip(RoundedCornerShape(3.dp))
                     .background(if (dragging) Palette.Amber else Palette.TextDim),
             )
         }
+        // Touch strip: 28dp at the right edge, active only while the handle shows.
+        Box(
+            Modifier.align(Alignment.TopEnd).fillMaxHeight().width(28.dp).pointerInput(total, visible) {
+                if (total == 0 || !visible) return@pointerInput
+                fun jump(py: Float) {
+                    val pos = (py - handleH / 2f).coerceIn(0f, trackPx - handleH)
+                    val target = ((pos / (trackPx - handleH)) * (total - 1)).toInt()
+                    scope.launch { state.scrollToItem(target) }
+                }
+                detectVerticalDragGestures(
+                    onDragStart = { dragging = true; jump(it.y) },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
+                ) { ch, _ -> ch.consume(); jump(ch.position.y) }
+            },
+        )
     }
 }
 
