@@ -368,12 +368,16 @@ uniform float uStreakLen;
 uniform vec3 uStreakTint;
 uniform float uStreakSpectral;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
-// A diffraction order's spectrum along the ray: blue nearest the light, red furthest; the
-// next order repeats it further out, fainter.
+// The spectrum along a ray as one smooth gradient, as a prism or grating spreads it: blue
+// nearest the light (shortest wavelength, spread least), through cyan, green, yellow and
+// orange to red at the far end, with no gaps between the colours.
 vec3 spectrum(float t) {
-    float ord = t * 2.6;
-    float ph = fract(ord);
-    return clamp(1.0 - abs(vec3(ph) - vec3(0.80, 0.52, 0.24)) * 3.4, 0.0, 1.0) / (1.0 + 0.6 * floor(ord));
+    // The whole spectrum fits the bright part of the ray, so every colour shows.
+    float h = 0.66 * (1.0 - smoothstep(0.02, 0.5, t));
+    vec3 c = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    c = c * c * (3.0 - 2.0 * c);
+    // Even out brightness across the colours (blue would read darker than yellow).
+    return c * 1.3 / (0.35 + dot(c, LUMA));
 }
 vec3 along(float t, float k) {
     vec3 x = t * k / vec3(1.06, 1.0, 0.94);   // red reaches a little further than blue
@@ -407,7 +411,7 @@ void main() {
                 float w0 = max(rc * mix(0.3, 1.0, uSoft), uPx * 0.7);
                 float w = mix(w0, max(w0 * 0.3, uPx * 0.6), t);
                 vec3 c = col;
-                if (uSpectral > 0.0) c = mix(col, dot(col, LUMA) * spectrum(t) * 1.6, uSpectral * smoothstep(0.03, 0.18, t));
+                if (uSpectral > 0.0) c = mix(col, dot(col, LUMA) * spectrum(t), uSpectral * smoothstep(0.0, 0.2, t));
                 acc += c * uStarAmt * emerge * along(t, 3.2) * exp(-0.5 * ac * ac / (w * w));
             }
         }
@@ -422,7 +426,7 @@ void main() {
                 float bw = rc * 2.5 + uPx * 3.0;
                 float prof = exp(-0.5 * ac * ac / (lw * lw)) + 0.3 * exp(-0.5 * ac * ac / (bw * bw));
                 vec3 tint = uStreakTint;
-                if (uStreakSpectral > 0.0) tint = mix(tint, spectrum(t) * 1.6, uStreakSpectral * smoothstep(0.03, 0.18, t));
+                if (uStreakSpectral > 0.0) tint = mix(tint, spectrum(t), uStreakSpectral * smoothstep(0.0, 0.2, t));
                 acc += dot(col, LUMA) * tint * uStreakAmt * emerge * along(t, 2.4) * prof;
             }
         }
