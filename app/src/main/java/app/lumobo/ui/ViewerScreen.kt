@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.HdrOff
+import androidx.compose.material.icons.outlined.HdrOn
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,8 +64,6 @@ import app.lumobo.ui.components.ZoomState
 import app.lumobo.ui.components.zoomable
 import app.lumobo.ui.theme.Palette
 import app.lumobo.ui.theme.Type
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -105,6 +108,11 @@ fun ViewerScreen(
         film = if (current == null) "" else withContext(Dispatchers.IO) { Images.readDeveloped(context, current).first.orEmpty() }
     }
 
+    // Developed photos are saved as Ultra HDR and shown in HDR (the window's HDR mode is set in
+    // MainActivity), following the same HDR switch as the editor.
+    val settings = remember { app.lumobo.data.AppSettings.get(context) }
+    val hdrView = settings.hdrView
+
     Box(Modifier.fillMaxSize().background(Palette.Bg)) {
         HorizontalPager(
             state = pager,
@@ -115,13 +123,7 @@ fun ViewerScreen(
             val uri = items[page]
             val z = zooms.getOrPut(uri) { ZoomState() }
             Box(Modifier.fillMaxSize().padding(top = 72.dp, bottom = 96.dp)) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context).data(uri).size(3200)
-                        .memoryCacheKey("$uri#$version").crossfade(true).build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().zoomable(z),
-                )
+                DevelopedImage(uri, version, Modifier.fillMaxSize().zoomable(z))
             }
         }
 
@@ -134,6 +136,14 @@ fun ViewerScreen(
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (film.isNotBlank()) Text(film.uppercase(), style = Type.Label.copy(color = Palette.Amber))
                 if (items.isNotEmpty()) Text("${pager.currentPage + 1} / ${items.size}", style = Type.Mono)
+            }
+            if (Build.VERSION.SDK_INT >= 34) {
+                RoundIconButton(
+                    if (hdrView) Icons.Outlined.HdrOn else Icons.Outlined.HdrOff,
+                    if (hdrView) "Show without HDR" else "Show in HDR", { settings.hdrView = !hdrView },
+                    background = if (hdrView) Palette.Amber.copy(alpha = 0.25f) else Palette.Surface2,
+                )
+                Spacer(Modifier.width(8.dp))
             }
             RoundIconButton(Icons.Outlined.Share, "Share", {
                 val uri = current ?: return@RoundIconButton
@@ -189,4 +199,20 @@ fun ViewerScreen(
         }
         Spacer(Modifier.height(0.dp))
     }
+}
+
+/**
+ * A developed photo, decoded with its Ultra HDR gain map kept (the image loader may drop it),
+ * so the HDR window can show its real highlights.
+ */
+@Composable
+private fun DevelopedImage(uri: Uri, version: Int, modifier: Modifier) {
+    val context = LocalContext.current
+    var bmp by remember(uri, version) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(uri, version) {
+        bmp = withContext(Dispatchers.IO) {
+            runCatching { Images.decode(context, uri, 3200).asImageBitmap() }.getOrNull()
+        }
+    }
+    bmp?.let { Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier) }
 }

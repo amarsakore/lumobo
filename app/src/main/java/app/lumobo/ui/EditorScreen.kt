@@ -186,15 +186,9 @@ fun EditorScreen(
     }
     // Show the photo in HDR on HDR screens (Android 14+): the preview carries the edited photo's
     // gain map, which the window draws above SDR white in HDR colour mode.
-    val window = (LocalContext.current as? android.app.Activity)?.window
+    // (The window's HDR mode is set in MainActivity by the screen on top.)
     val appSettings = remember { app.lumobo.data.AppSettings.get(context) }
     val hdrView = appSettings.hdrView
-    DisposableEffect(window, hdrView) {
-        if (android.os.Build.VERSION.SDK_INT >= 34) {
-            window?.colorMode = if (hdrView) android.content.pm.ActivityInfo.COLOR_MODE_HDR else android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
-        }
-        onDispose { window?.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT }
-    }
     // Leaving an edited photo develops it into Developed (library photos always reopen fresh;
     // a developed photo is updated in place). The overlay shows while it develops.
     val appContext = LocalContext.current.applicationContext

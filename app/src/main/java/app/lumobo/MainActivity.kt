@@ -73,6 +73,16 @@ class MainActivity : ComponentActivity() {
                     removedKeys.forEach { holder.removeState(it) }
                     removedKeys.clear()
                 }
+                // HDR window while a photo is shown (editor, developed viewer) on Android 14+, so
+                // Ultra HDR photos show their real highlights; follows the HDR switch. Set here, by
+                // the screen on top, because animated screen changes overlap.
+                val top = stack.last()
+                val hdr = settings.hdrView && (top is Screen.Editor || top is Screen.Viewer)
+                androidx.compose.runtime.LaunchedEffect(hdr) {
+                    if (android.os.Build.VERSION.SDK_INT >= 34) {
+                        window.colorMode = if (hdr) android.content.pm.ActivityInfo.COLOR_MODE_HDR else android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+                    }
+                }
                 val haptics = if (settings.haptics) LocalHapticFeedback.current else NoHaptics
                 CompositionLocalProvider(LocalHapticFeedback provides haptics) {
                     AnimatedContent(

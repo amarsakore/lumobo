@@ -83,6 +83,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                 ChoiceRow("Theme", listOf("System", "Light", "Dark"), s.themeMode) { s.themeMode = it }
                 if (android.os.Build.VERSION.SDK_INT >= 31) {
                     SwitchRow("Material You accent", "Buttons and highlights take your wallpaper's colour.", s.dynamicAccent) { s.dynamicAccent = it }
+                if (android.os.Build.VERSION.SDK_INT >= 34) {
+                    SwitchRow(
+                        "Show photos in HDR",
+                        "On HDR screens, photos show their real highlights while editing and in Developed. Off shows them at normal brightness. Edits still save as HDR. The HDR button in the editor changes this too.",
+                        s.hdrView,
+                    ) { s.hdrView = it }
+                }
                 }
             }
 
