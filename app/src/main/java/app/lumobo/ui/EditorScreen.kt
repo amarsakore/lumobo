@@ -963,6 +963,8 @@ private fun LensPanel(editor: EditorController) {
                     format = { "${((it - 0.3f) / 0.65f * 100).roundToInt()}" })
                 FilmSlider("Star size", f.starLength, { editor.updateFx(f.copy(starLength = it)) }, min = 0f, max = 1f, default = 0.5f)
                 FilmSlider("Rainbow", f.starSpectral, { editor.updateFx(f.copy(starSpectral = it)) }, min = 0f, max = 1f, default = 0f)
+                // Crisp aperture sunstar rays (0) to soft, thick filter rays from big lights (100).
+                FilmSlider("Ray softness", f.starSoft, { editor.updateFx(f.copy(starSoft = it)) }, min = 0f, max = 1f, default = 0.6f)
                 FilmSlider("Star angle", f.starAngle, { editor.updateFx(f.copy(starAngle = it)) }, min = 0f, max = 1f, default = 0f,
                     format = { "${(it * 180f / (f.starPoints / 2).coerceAtLeast(2)).roundToInt()}°" })
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {

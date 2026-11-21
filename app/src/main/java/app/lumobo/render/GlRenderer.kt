@@ -714,8 +714,9 @@ class GlRenderer {
             GLES30.glUniform1f(uniform(progStreak, "uDensOn"), 1f)
             GLES30.glUniform1f(uniform(progStreak, "uDensLod"), 3.5f + log2(scale.coerceAtLeast(0.25f)))
             GLES30.glUniform1f(uniform(progStreak, "uRayLod"), 2f)
-            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f, disperse: Float = 0.06f) {
+            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f, disperse: Float = 0.06f, rayLod: Float = 2f) {
                 GLES30.glUniform1f(uniform(progStreak, "uSpectral"), spectral)
+                GLES30.glUniform1f(uniform(progStreak, "uRayLod"), rayLod)
                 GLES30.glUniform1f(uniform(progStreak, "uDisperse"), disperse)
                 val (dx, dy) = displayToSource(displayDeg, geo)
                 GLES30.glUniform2f(uniform(progStreak, "uDir"), dx * stepTexels / fxW, dy * stepTexels / fxH)
@@ -732,14 +733,18 @@ class GlRenderer {
                     val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
                     // A gentle falloff: rays taper slowly over their length, as through a real
                     // filter, instead of piling up into a round blob at the light.
-                    arm(deg, step, 64, 0.024f, k, k * 0.97f, k * 0.92f, fx.starSpectral)
+                    arm(deg, step, 64, 0.024f, k, k * 0.97f, k * 0.92f, fx.starSpectral, rayLod = fx.starSoft.coerceIn(0f, 1f) * 2.4f)
                 }
             }
             if (fx.streak > 0f) {
                 val k = fx.streak * 5f
                 // Cool anamorphic blue to warm amber; Rainbow splits it like a prism.
                 val w = fx.streakWarm.coerceIn(0f, 1f)
-                arm(0.0, 1.7f * scale, 64, 0.022f, k * (0.35f + 0.65f * w), k * (0.6f + 0.02f * w), k * (1f - 0.7f * w), fx.starSpectral, disperse = 0.02f)
+                // The cylinder's flare: a thin bright line through each light, inside a broad,
+                // soft band of the same colour.
+                val sr = k * (0.35f + 0.65f * w); val sg = k * (0.6f + 0.02f * w); val sb = k * (1f - 0.7f * w)
+                arm(0.0, 1.7f * scale, 64, 0.022f, sr, sg, sb, fx.starSpectral, disperse = 0.02f, rayLod = 0.3f)
+                arm(0.0, 1.7f * scale, 64, 0.03f, sr * 0.35f, sg * 0.35f, sb * 0.35f, 0f, disperse = 0.02f, rayLod = 3f)
             }
             GLES30.glDisable(GLES30.GL_BLEND)
         }

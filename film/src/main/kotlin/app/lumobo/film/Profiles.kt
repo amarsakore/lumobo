@@ -52,6 +52,9 @@ data class Effects(
     val starThreshold: Float = 0.6f,
     /** Diffraction colour along the rays (0 = white, 1 = full rainbow). */
     val starSpectral: Float = 0f,
+    /** Ray softness: 0 crisp, thin rays (an aperture's sunstar), 1 soft, thick rays from a big
+     *  light (a cross-screen filter). Small lights always stay crisp. */
+    val starSoft: Float = 0.6f,
     /** Areas where stars / streaks are erased: (x, y, radius) triples in source uv. */
     val starMask: List<Float> = emptyList(),
 ) {
@@ -61,7 +64,7 @@ data class Effects(
         starPoints = o.starPoints, starLength = o.starLength, starAngle = o.starAngle, streak = o.streak,
         tiltShift = o.tiltShift, focusY = o.focusY, focusSize = o.focusSize, softFocus = o.softFocus, swirl = o.swirl,
         starMask = o.starMask, starThreshold = o.starThreshold, starSpectral = o.starSpectral,
-        mist = o.mist, streakWarm = o.streakWarm,
+        mist = o.mist, streakWarm = o.streakWarm, starSoft = o.starSoft,
     )
 }
 
@@ -106,17 +109,18 @@ enum class LensPreset(val label: String, val blurb: String) {
             FISHEYE -> base.copy(distortion = 0.85f, vignette = maxOf(fx.vignette, 0.25f))
             CIRCLE -> base.copy(distortion = 1f, fisheyeCircle = true)
             WIDE -> base.copy(distortion = 0.3f)
-            TWINKLE -> base.copy(star = 0.7f, starPoints = 4, starLength = 0.55f, starAngle = 0.25f)
-            STARBURST -> base.copy(star = 0.6f, starPoints = 6, starLength = 0.45f, starAngle = 0f)
-            SPARKLE -> base.copy(star = 0.6f, starPoints = 8, starLength = 0.28f, starAngle = 0.1f)
+            TWINKLE -> base.copy(star = 0.7f, starPoints = 4, starLength = 0.55f, starAngle = 0.25f, starSoft = 0.6f)
+            STARBURST -> base.copy(star = 0.6f, starPoints = 6, starLength = 0.45f, starAngle = 0f, starSoft = 0.5f)
+            SPARKLE -> base.copy(star = 0.6f, starPoints = 8, starLength = 0.28f, starAngle = 0.1f, starSoft = 0.3f)
             ANAMORPHIC -> base.copy(streak = 0.7f)
             TILT -> base.copy(tiltShift = 1f, focusY = 0.55f, focusSize = 0.22f)
             SOFT -> base.copy(softFocus = 0.6f, bloom = maxOf(fx.bloom, 0.3f))
             SWIRL -> base.copy(swirl = 0.8f, vignette = maxOf(fx.vignette, 0.3f))
             PROMIST -> base.copy(mist = 0.55f)
-            GLIMMER -> base.copy(mist = 0.35f, star = 0.4f, starPoints = 4, starLength = 0.2f, starAngle = 0.25f, starThreshold = 0.7f)
-            DIFFRACTION -> base.copy(star = 0.6f, starPoints = 8, starLength = 0.5f, starAngle = 0.06f, starSpectral = 0.85f)
-            SUNBURST -> base.copy(star = 0.65f, starPoints = 8, starLength = 0.95f, starAngle = 0f, starThreshold = 0.7f)
+            GLIMMER -> base.copy(mist = 0.35f, star = 0.4f, starPoints = 4, starLength = 0.2f, starAngle = 0.25f, starThreshold = 0.7f, starSoft = 0.3f)
+            DIFFRACTION -> base.copy(star = 0.6f, starPoints = 8, starLength = 0.5f, starAngle = 0.06f, starSpectral = 0.85f, starSoft = 0.25f)
+            // An aperture's sunstar: thin, sharp, long rays, one pair per blade edge.
+            SUNBURST -> base.copy(star = 0.65f, starPoints = 8, starLength = 0.95f, starAngle = 0f, starThreshold = 0.7f, starSoft = 0.15f)
             HELIOS -> base.copy(swirl = 0.55f, softFocus = 0.12f, vignette = maxOf(fx.vignette, 0.3f), aberration = maxOf(fx.aberration, 0.3f))
             HOLGA -> base.copy(distortion = 0.12f, swirl = 0.45f, softFocus = 0.15f, vignette = maxOf(fx.vignette, 0.65f))
             VELVET -> base.copy(softFocus = 0.55f, mist = 0.45f)

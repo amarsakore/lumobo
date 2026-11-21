@@ -275,7 +275,7 @@ uniform float uOneSided; // 1: light trails only toward +uDir (motion), 0: both 
 uniform float uDisperse; // natural dispersion: longer wavelengths spread further (0 = none)
 uniform float uDensOn;   // 1: each light's ray length follows its total output (density)
 uniform float uDensLod;  // mip level whose texel is about one light's extent
-uniform float uRayLod;   // mip level the rays read the light from (wider, softer rays)
+uniform float uRayLod;   // mip level the rays read a big light from (softer, thicker rays); small lights stay crisp
 // How far a light's rays reach (fraction of the full arm): from the total light it puts out,
 // summed over its surroundings. A dense, big light (the sun) throws long rays - one big star
 // or a long anamorphic streak from its centre; a small light only twinkles.
@@ -314,7 +314,7 @@ void main() {
         vec3 xa = t * ka / reach;
         // The ray carries the light's core read slightly blurred: a thick, soft ray as wide as
         // the light, while only the core (not the whole bright area) feeds it.
-        vec3 s = textureLod(uTex, pa, uRayLod).rgb * ca * fade / (1.0 + xa * xa) / (n * atan(ka) / ka);
+        vec3 s = textureLod(uTex, pa, uRayLod * ra).rgb * ca * fade / (1.0 + xa * xa) / (n * atan(ka) / ka);
         if (uOneSided < 0.5) {
             vec2 pb = vUv + uDir * fi;
             vec3 sb = texture(uTex, pb).rgb;
@@ -322,12 +322,15 @@ void main() {
             float rb = lightReach(pb, sb, cb);
             float kb = K / rb;
             vec3 xb = t * kb / reach;
-            s += textureLod(uTex, pb, uRayLod).rgb * cb * fade / (1.0 + xb * xb) / (n * atan(kb) / kb);
+            s += textureLod(uTex, pb, uRayLod * rb).rgb * cb * fade / (1.0 + xb * xb) / (n * atan(kb) / kb);
         }
         if (uSpectral > 0.0) {
-            // A diffraction star splits light into colours that spread out along each arm.
-            float t = fi / float(uTaps);
-            vec3 spec = clamp(1.5 - abs(vec3(t * 2.2) - vec3(0.15, 0.55, 0.95)) * 3.0, 0.0, 1.0);
+            // A diffraction grating spreads each order into a spectrum, blue nearest the light
+            // (shorter wavelength, smaller angle) and red furthest; the next order repeats it
+            // further out, fainter.
+            float ord = t * 2.6;
+            float ph = fract(ord);
+            vec3 spec = clamp(1.0 - abs(vec3(ph) - vec3(0.80, 0.52, 0.24)) * 3.4, 0.0, 1.0) / (1.0 + 0.6 * floor(ord));
             float y = dot(s, vec3(0.2126, 0.7152, 0.0722));
             s = mix(s, y * spec * 1.6, uSpectral * smoothstep(0.03, 0.2, t));
         }
@@ -734,6 +737,44 @@ vec3 grade(vec3 src, vec2 suv, bool detail) {
     return c * (1.0 - uFade * 0.10) + uFade * 0.075;
 }
 
+// Light gathered over a disc of radius rho (short-side units) around frame uv: a lens's
+// defocus. Averaged in light, so bright points spread into discs of light (bokeh).
+vec3 discBlur(vec2 uv, float rho) {
+    vec2 ts = vec2(textureSize(uSrc, 0)) * uSrcRect.zw;
+    float px = rho * min(ts.x, ts.y);
+    float lod = log2(max(px * 0.35, 1.0));
+    vec3 acc = toLin(textureLod(uSrc, srcUv(uv), lod).rgb);
+    float n = 1.0;
+    for (int ring = 1; ring <= 2; ring++) {
+        float rr = rho * float(ring) * 0.5;
+        int taps = ring * 8;
+        for (int i = 0; i < 16; i++) {
+            if (i >= taps) break;
+            float a = (float(i) + 0.5 * float(ring)) * 6.2831853 / float(taps);
+            acc += toLin(textureLod(uSrc, srcUv(uv + vec2(cos(a), sin(a)) * rr / uAspect), lod).rgb);
+            n += 1.0;
+        }
+    }
+    return toSrgb(acc / n);
+}
+
+// Light smeared along the circle through uv round the frame centre, over a length len
+// (short-side units): the swirl of a Helios or Petzval lens.
+vec3 swirlBlur(vec2 uv, float len) {
+    vec2 p = (uv - 0.5) * uAspect;
+    vec2 t = normalize(vec2(-p.y, p.x) + vec2(1e-6));
+    vec2 ts = vec2(textureSize(uSrc, 0)) * uSrcRect.zw;
+    float lod = log2(max(len * min(ts.x, ts.y) / 6.0, 1.0));
+    vec3 acc = vec3(0.0);
+    for (int i = -6; i <= 6; i++) {
+        float f = float(i) / 6.0;
+        // Along the arc (a slight inward bend keeps it on the circle).
+        vec2 q = p + t * len * f - p * (len * f) * (len * f) / max(2.0 * dot(p, p), 1e-4);
+        acc += toLin(textureLod(uSrc, srcUv(0.5 + q / uAspect), lod).rgb);
+    }
+    return toSrgb(acc / 13.0);
+}
+
 vec3 screen(vec3 a, vec3 b) { return 1.0 - (1.0 - clamp(a, 0.0, 1.0)) * (1.0 - clamp(b, 0.0, 1.0)); }
 
 // Glow, in linear light. `layer` returns the glow light on its own.
@@ -838,33 +879,37 @@ void main() {
     if (uGlowStyle == 1) src = diffuse(src, suv);
     vec3 c = grade(src, suv, true);
 
-    // Lens blur: tilt-shift band, soft-focus diffusion, swirling edges.
+    // Lens blur, all mixed in light (as a lens does), so bright points spread instead of greying.
     if (uTilt > 0.0 || uSoft > 0.0 || uSwirl > 0.0) {
-        float m = 0.0;
-        if (uTilt > 0.0) {
-            float d = abs(vUv.y - uFocusY);
-            m = max(m, smoothstep(uFocusSize * 0.5, uFocusSize * 0.5 + 0.28, d) * uTilt);
+        vec3 cl = toLin(c);
+        if (uSoft > 0.0) {
+            // Soft focus (Velvet, portrait soft lenses): uncorrected spherical aberration lays a
+            // glowing, out-of-focus copy of the image over the sharp one; highlights bloom.
+            vec3 halo = texture(uLocal, suv).rgb / max(uGain, vec3(1e-3));
+            cl = mix(cl, toLin(grade(toSrgb(halo), suv, false)), uSoft * 0.45);
         }
-        if (uSoft > 0.0) m = max(m, uSoft * 0.45);
-        vec3 bl;
+        if (uTilt > 0.0) {
+            // Tilt-shift: the plane of focus is tilted, so blur grows steadily with distance
+            // from the focus band (miniature look), as discs of light (bokeh).
+            float d = abs(vUv.y - uFocusY) - uFocusSize * 0.5;
+            float rho = uTilt * 0.032 * clamp(d / 0.45, 0.0, 1.3);
+            if (rho > 0.0005) {
+                vec3 b = toLin(grade(discBlur(uv, rho), suv, false));
+                cl = mix(cl, b, smoothstep(0.0005, 0.003, rho));
+            }
+        }
         if (uSwirl > 0.0) {
+            // Swirl (Helios 44, Petzval, toy lenses): cat's-eye vignetting and off-axis
+            // aberrations smear the image along circles round the centre, growing to the edges.
             vec2 p = (uv - 0.5) * uAspect;
             float r = length(p) / length(0.5 * uAspect);
-            float e = smoothstep(0.28, 0.95, r) * uSwirl;
-            m = max(m, e * 0.9);
-            vec3 acc = vec3(0.0);
-            for (int i = -3; i <= 3; i++) {
-                float ang = float(i) * 0.018 * e;
-                float cs = cos(ang);
-                float sn = sin(ang);
-                vec2 q = mat2(cs, sn, -sn, cs) * p;
-                acc += texture(uLocal, srcUv(0.5 + q / uAspect)).rgb;
+            float len = uSwirl * 0.04 * pow(smoothstep(0.18, 1.0, r), 1.5);
+            if (len > 0.0005) {
+                vec3 b = toLin(grade(swirlBlur(uv, len), suv, false));
+                cl = mix(cl, b, smoothstep(0.0005, 0.003, len));
             }
-            bl = acc / 7.0;
-        } else {
-            bl = texture(uLocal, suv).rgb;
         }
-        if (m > 0.0) c = mix(c, grade(toSrgb(bl), suv, false), clamp(m, 0.0, 1.0));
+        c = clamp(toSrgb(cl), 0.0, 1.0);
         if (uTilt > 0.0) {
             float y = dot(c, LUMA);
             c = clamp(mix(vec3(y), c, 1.0 + 0.18 * uTilt), 0.0, 1.0);
