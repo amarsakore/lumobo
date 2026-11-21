@@ -396,8 +396,8 @@ private fun CurveEditor(points: List<Pt>, color: Color, histogram: FloatArray?, 
 fun DetailPanel(editor: EditorController) {
     val a = editor.adj
     Column(Modifier.fillMaxWidth()) {
-        ToolHeader("Detail & glow", onReset = {
-            editor.updateAdj(a.copy(texture = 0f, clarity = 0f, sharpen = 0f, dehaze = 0f, hdr = 0f, glow = 0f))
+        ToolHeader("Detail", onReset = {
+            editor.updateAdj(a.copy(texture = 0f, clarity = 0f, sharpen = 0f, dehaze = 0f, hdr = 0f))
         })
         PanelColumn(Modifier.padding(bottom = 8.dp)) {
             FilmSlider("Texture", a.texture, { editor.updateAdj(editor.adj.copy(texture = it)) })
@@ -405,7 +405,6 @@ fun DetailPanel(editor: EditorController) {
             FilmSlider("Sharpen", a.sharpen, { editor.updateAdj(editor.adj.copy(sharpen = it)) }, min = 0f, max = 1f, default = 0f)
             FilmSlider("Dehaze", a.dehaze, { editor.updateAdj(editor.adj.copy(dehaze = it)) })
             FilmSlider("HDR", a.hdr, { editor.updateAdj(editor.adj.copy(hdr = it)) })
-            FilmSlider("Glow", a.glow, { editor.updateAdj(editor.adj.copy(glow = it)) }, min = 0f, max = 1f, default = 0f)
         }
     }
 }

@@ -41,7 +41,10 @@ float toneOf(vec3 s, vec3 gain) {
     /**
      * Extracts light for the low-resolution passes.
      * 0 halation highlights, 1 bloom, 2 star/streak glints, 3 whole image, 4 haze (min channel),
-     * 5 tone guide for the edge-aware Clarity and HDR.
+     * 5 tone guide for the edge-aware Clarity and HDR, 6 Glow light.
+     * Light for the optical effects (0, 1, 2, 6) is measured with the photographer's exposure and
+     * white balance only, not the film's lab-scan correction, so switching to a brighter film
+     * doesn't suddenly feed more light into stars, mist and glow and blow them out.
      */
     const val PREFILTER = """#version 300 es
 precision highp float;
@@ -54,7 +57,50 @@ uniform vec2 uPeak;   // inner ring radius in uv, for glint detection
 uniform sampler2D uStarMask; // star eraser (painted areas = 1)
 uniform float uMaskOn;
 uniform float uThresh;   // star threshold (0.6 = classic)
+uniform float uGlowT;    // Glow: tone where the glow starts (from Range)
+uniform float uGlowSat;  // Glow: 0 white light, 1 each light keeps its own colour
+uniform float uGlowAll;  // Glow: 1 = the whole photo glows (Orton)
+uniform float uGlowPeak; // Glow: 1 = favour point-like lights (Streak)
+// Ultra HDR gain map (ProXDR on ColorOS, and most phone photos): how much brighter than the
+// SDR image each part of the scene really was.
+uniform float uGmOn;
+uniform sampler2D uGainTex;
+uniform float uGmSingle;  // 1: one-channel map (in .a)
+uniform vec3 uGmMin;      // log2 ratio min / max
+uniform vec3 uGmMax;
+uniform vec3 uGmGamma;
+uniform vec3 uGmEpsS;
+uniform vec3 uGmEpsH;
+uniform float uFineLod;   // finer mip level for finding tiny glints
+uniform vec2 uFine;       // quarter of an fx texel, in uv
 $COMMON
+// HDR headroom of the scene here, in stops above the SDR photo. Real lights (sun, its glints
+// on water, lamps) carry stops of it; a white wall carries none. From the photo's gain map, or
+// estimated when it has none.
+float headroom(vec2 uv, vec3 sdrLin) {
+    if (uGmOn < 0.5) {
+        // No gain map: rebuild it. Light that clipped (was brighter than the sensor could hold)
+        // and stands far above its wide surroundings is a light source; a white wall in a bright
+        // scene clips too but sits close to its surroundings.
+        float mx = max(sdrLin.r, max(sdrLin.g, sdrLin.b));
+        float clip = smoothstep(0.80, 0.98, mx);
+        float around = dot(toLin(textureLod(uSrc, uv, uFineLod + 4.0).rgb), LUMA);
+        float lift = log2((dot(sdrLin, LUMA) + 0.02) / (around + 0.02));
+        return clip * clamp(lift * 0.8, 0.0, 3.0);
+    }
+    vec4 t = texture(uGainTex, uv);
+    vec3 g = uGmSingle > 0.5 ? vec3(t.a) : t.rgb;
+    vec3 lb = mix(uGmMin, uGmMax, pow(clamp(g, 0.0, 1.0), 1.0 / uGmGamma));
+    vec3 hdr = max((sdrLin + uGmEpsS) * exp2(lb) - uGmEpsH, 0.0);
+    float ls = dot(sdrLin, LUMA);
+    float h = log2(max(dot(hdr, LUMA), 1e-4) / max(ls, 1e-4));
+    return clamp(h, 0.0, 4.0) * smoothstep(0.06, 0.3, ls);
+}
+// How bright a light is: its brightest channel counts, so a golden glint or a red neon is as
+// much a light as a white one, raised by its HDR headroom.
+float lightLevel(vec3 lin, float h) {
+    return max(dot(lin, LUMA), 0.85 * max(lin.r, max(lin.g, lin.b))) * exp2(0.5 * h);
+}
 // Glint detection works on the photo as shot (no exposure gain), so the star count stays
 // stable however much the exposure slider is pushed.
 float ringLuma(vec2 r, float lod) {
@@ -66,10 +112,17 @@ float ringLuma(vec2 r, float lod) {
     return s / 8.0;
 }
 void main() {
-    vec3 lin = toLin(texture(uSrc, vUv).rgb) * uGain;
+    vec3 sdr = toLin(texture(uSrc, vUv).rgb);
+    vec3 lin = sdr * uGain;
     float l = dot(lin, LUMA);
-    if (uMode == 0) { fragColor = vec4(lin * smoothstep(0.50, 0.98, l), 1.0); return; }
-    if (uMode == 1) { fragColor = vec4(lin * smoothstep(0.18, 0.95, l), 1.0); return; }
+    if (uMode == 0 || uMode == 1) {
+        // Film halation / bloom: bright light, real lights (HDR headroom) carrying more of it.
+        float h = headroom(vUv, sdr);
+        float ll = lightLevel(lin, h);
+        float k = uMode == 0 ? smoothstep(0.50, 0.98, ll) : smoothstep(0.18, 0.95, ll);
+        fragColor = vec4(lin * k * min(exp2(0.5 * h), 2.0), 1.0);
+        return;
+    }
     if (uMode == 3) { fragColor = vec4(lin, 1.0); return; }
     if (uMode == 4) { fragColor = vec4(vec3(min(lin.r, min(lin.g, lin.b))), 1.0); return; }
     if (uMode == 5) {
@@ -77,17 +130,50 @@ void main() {
         fragColor = vec4(vec3(toneOf(texture(uSrc, vUv).rgb, uGain)), 1.0);
         return;
     }
-    // Glints, exactly as in 1.1: bright AND brighter than the surroundings, so sparkles on
-    // water or street lamps make stars while big bright areas don't smear.
+    if (uMode == 6) {
+        // Glow light: tones above Range's knee (soft, so the glow has no hard edge), in their
+        // own colour or turned white.
+        vec3 s = texture(uSrc, vUv).rgb;
+        float h = headroom(vUv, sdr);
+        // Tone of the light: its brightest channel counts (coloured lights glow too), and
+        // real lights rank above white surfaces by their HDR headroom.
+        float y = max(toneOf(s, uGain), 0.9 * toSrgb(vec3(max(lin.r, max(lin.g, lin.b)))).r) + 0.2 * h;
+        float w = uGlowAll > 0.5 ? 1.0 : smoothstep(uGlowT - 0.22, uGlowT + 0.04, y);
+        if (uGlowPeak > 0.5) {
+            // Anamorphic streaks gather on point-like lights: bright AND far above their
+            // surroundings. Broad bright areas (a sunlit window) streak only faintly.
+            float aw = lightLevel(toLin(textureLod(uSrc, vUv, uFineLod + 3.0).rgb) * uGain, 0.0);
+            w *= mix(0.15, 1.0, smoothstep(0.05, 0.5, lightLevel(lin, h) - aw));
+        }
+        fragColor = vec4(mix(vec3(l), lin, uGlowSat) * w * min(exp2(0.5 * h), 1.6), 1.0);
+        return;
+    }
+    // Glints, as in 1.1: bright AND brighter than the surroundings, so sparkles on water or
+    // street lamps make stars while big bright areas don't smear. The brightest of four finer
+    // samples is used, so tiny sparkles (sun shimmer on the sea) aren't averaged away by the
+    // low resolution; coloured light counts by its brightest channel, and HDR headroom ranks
+    // real lights above white surfaces.
+    vec2 best = vUv;
+    float bl = -1.0;
+    for (int i = 0; i < 4; i++) {
+        vec2 q = vUv + vec2(i == 0 || i == 2 ? -1.0 : 1.0, i < 2 ? -1.0 : 1.0) * uFine;
+        float v = lightLevel(toLin(textureLod(uSrc, q, uFineLod).rgb) * uGain, 0.0);
+        if (v > bl) { bl = v; best = q; }
+    }
+    sdr = toLin(textureLod(uSrc, best, uFineLod).rgb);
+    lin = sdr * uGain;
+    float hh = headroom(best, sdr);
+    l = lightLevel(lin, hh);
     float around = 0.0;
     for (int i = 0; i < 8; i++) {
         float a = float(i) * 0.7853982;
         vec2 o = vec2(cos(a), sin(a)) * uPeak;
-        around += dot(toLin(textureLod(uSrc, vUv + o, 2.0).rgb) * uGain, LUMA);
+        around += lightLevel(toLin(textureLod(uSrc, vUv + o, 2.0).rgb) * uGain, 0.0);
     }
     around /= 8.0;
     float peak = max(l - around, 0.0);
     float k = smoothstep(uThresh, max(1.0, uThresh + 0.1), l) * smoothstep(0.02, 0.3, peak);
+    lin *= min(exp2(0.5 * hh), 2.0);
     float keep = uMaskOn > 0.5 ? 1.0 - texture(uStarMask, vUv).r : 1.0;
     fragColor = vec4(lin * k * k * 3.0 * keep, 1.0);
 }
@@ -158,12 +244,14 @@ uniform int uTaps;
 uniform float uDecay;
 uniform vec3 uTint;
 uniform float uSpectral; // diffraction rainbow along the ray (0 = white)
+uniform float uOneSided; // 1: light trails only toward +uDir (motion), 0: both ways
 void main() {
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
         float w = exp(-fi * uDecay);
-        vec3 s = texture(uTex, vUv + uDir * fi).rgb + texture(uTex, vUv - uDir * fi).rgb;
+        vec3 s = texture(uTex, vUv - uDir * fi).rgb;
+        if (uOneSided < 0.5) s += texture(uTex, vUv + uDir * fi).rgb;
         if (uSpectral > 0.0) {
             // A diffraction star splits light into colours that spread out along each arm.
             float t = fi / float(uTaps);
@@ -191,7 +279,9 @@ uniform sampler2D uHal;
 uniform sampler2D uBloom;
 uniform sampler2D uLocal;
 uniform sampler2D uStarTex;
-uniform sampler2D uWide;
+uniform sampler2D uGlowWide;  // Glow: wide blur of the glow light
+uniform sampler2D uGlowSrc;   // Glow: the glow light itself (fx resolution, unblurred)
+uniform sampler2D uGlowTight; // Glow: tight blur, or the streaks for Motion / Streak
 uniform sampler2D uHaze;
 uniform sampler2D uCurve;
 
@@ -223,7 +313,15 @@ uniform float uClarity;
 uniform float uDehaze;
 uniform float uSharpen;
 uniform float uHdr;
-uniform float uGlow;
+// glow
+uniform int uGlowStyle;    // -1 off, else GlowStyle ordinal
+uniform float uGlowAmt;
+uniform vec3 uGlowTint;    // colour of the glow light (Warmth / Tint; Halation's hue)
+uniform float uGlowShow;   // 1: show only the glow light, to see what glows and how far
+uniform float uGlowLift;   // Orton: brightness of the soft copy (from Range)
+uniform float uGlowT;      // tone where the glow starts (from Range), as in the glow light pass
+uniform float uGlowSat;    // 0 white light, 1 each light keeps its own colour
+uniform vec3 uLightGain;   // the gain the glow light was measured with (exposure + white balance)
 uniform float uTexLod;
 uniform sampler2D uGuide;  // the photo's tone at fx resolution, unblurred (Clarity's edge guide)
 uniform vec2 uGuideTexel;  // one fx texel, in source uv
@@ -552,6 +650,58 @@ vec3 grade(vec3 src, vec2 suv, bool detail) {
     return c * (1.0 - uFade * 0.10) + uFade * 0.075;
 }
 
+vec3 screen(vec3 a, vec3 b) { return 1.0 - (1.0 - clamp(a, 0.0, 1.0)) * (1.0 - clamp(b, 0.0, 1.0)); }
+
+// Glow, in linear light. `layer` returns the glow light on its own.
+vec3 applyGlow(vec3 lin, vec2 suv, out vec3 layer) {
+    vec3 gs = texture(uGlowSrc, suv).rgb;
+    vec3 gt = texture(uGlowTight, suv).rgb;
+    vec3 gw = texture(uGlowWide, suv).rgb;
+    float a = uGlowAmt;
+    if (uGlowStyle == 0) {
+        // Bloom: a long-tailed haze (tight core + wide skirt, like a real lens) over the photo.
+        layer = (0.4 * gt + 0.6 * gw) * uGlowTint * 1.5;
+        return screen(lin, layer * a);
+    }
+    if (uGlowStyle == 1) {
+        // Diffusion happens in front of the film (see diffuse()); here only for SHOW.
+        layer = (0.5 * gt + 0.5 * gw) * uGlowTint;
+        return lin;
+    }
+    if (uGlowStyle == 2) {
+        // Halation: light bounced back through the film. A coloured halo hugs each light; the
+        // light itself (already exposed) doesn't take the colour.
+        float h = max(dot(0.65 * gt + 0.35 * gw, LUMA) - 0.6 * dot(gs, LUMA), 0.0);
+        layer = uGlowTint * h * 2.6;
+        return lin + layer * a;
+    }
+    if (uGlowStyle == 3) {
+        // Orton: the photo screened with itself, multiplied by a brightened soft copy.
+        // Luminous, painterly highlights with deep, rich colour.
+        vec3 c = toSrgb(lin);
+        vec3 b = clamp(toSrgb((0.35 * gt + 0.65 * gw) * uGlowTint * uGlowLift), 0.0, 1.0);
+        vec3 cs = 1.0 - (1.0 - clamp(c, 0.0, 1.0)) * (1.0 - clamp(c, 0.0, 1.0));
+        vec3 bs = 1.0 - (1.0 - b) * (1.0 - b);
+        layer = toLin(bs);
+        return toLin(mix(c, cs * bs, a));
+    }
+    // Motion / Streak: trails of light added over the photo.
+    layer = gt * uGlowTint * 1.5;
+    return screen(lin, layer * a);
+}
+
+// Diffusion filter, in front of the film like the real glass: a share of the light in the
+// chosen tones (Range) leaves its place and spreads around it. Detail in those tones softens,
+// the shadows next to them lift with their light, and the film then responds to the result.
+vec3 diffuse(vec3 src, vec2 suv) {
+    vec3 sl = toLin(src);
+    float w = smoothstep(uGlowT - 0.22, uGlowT + 0.04, toneOf(src, uLightGain));
+    vec3 sel = mix(vec3(dot(sl, LUMA)), sl, uGlowSat) * w;
+    vec3 spread = (0.5 * texture(uGlowTight, suv).rgb + 0.5 * texture(uGlowWide, suv).rgb) / max(uLightGain, vec3(1e-3));
+    float k = uGlowAmt * 0.8;
+    return toSrgb(max(sl + k * (spread * uGlowTint - sel), 0.0));
+}
+
 void main() {
     float circle;
     vec2 uv = lensUv(vUv, circle);
@@ -568,6 +718,7 @@ void main() {
     } else {
         src = texture(uSrc, suv).rgb;
     }
+    if (uGlowStyle == 1) src = diffuse(src, suv);
     vec3 c = grade(src, suv, true);
 
     // Lens blur: tilt-shift band, soft-focus diffusion, swirling edges.
@@ -605,10 +756,14 @@ void main() {
 
     // Optics in linear light.
     vec3 lin = toLin(c);
-    if (uGlow > 0.0) {
-        vec3 wb = texture(uWide, suv).rgb;
-        vec3 g = wb * smoothstep(0.04, 0.9, dot(wb, LUMA)) * 1.25;
-        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(g * uGlow, 0.0, 1.0));
+    if (uGlowStyle >= 0) {
+        vec3 layer;
+        lin = applyGlow(lin, suv, layer);
+        if (uGlowShow > 0.5) {
+            // Show glow: just the light that glows, on black.
+            fragColor = vec4(clamp(toSrgb(layer * (0.6 + uGlowAmt)), 0.0, 1.0), 1.0);
+            return;
+        }
     }
     if (uBloomAmt > 0.0) {
         vec3 b = texture(uBloom, suv).rgb;

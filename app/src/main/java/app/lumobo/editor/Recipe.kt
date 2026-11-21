@@ -6,6 +6,8 @@ import app.lumobo.film.Effects
 import app.lumobo.film.FrameStyle
 import app.lumobo.film.Geometry
 import app.lumobo.film.Curves
+import app.lumobo.film.Glow
+import app.lumobo.film.GlowStyle
 import app.lumobo.film.Grade
 import app.lumobo.film.Pt
 import org.json.JSONArray
@@ -34,7 +36,14 @@ data class Recipe(
             put("n", adj.tint.toDouble()); put("sat", adj.saturation.toDouble()); put("f", adj.fade.toDouble())
             put("wh", adj.whites.toDouble()); put("bk", adj.blacks.toDouble()); put("vi", adj.vibrance.toDouble())
             put("tx", adj.texture.toDouble()); put("cl", adj.clarity.toDouble()); put("dz", adj.dehaze.toDouble())
-            put("sh", adj.sharpen.toDouble()); put("hdr", adj.hdr.toDouble()); put("gl", adj.glow.toDouble())
+            put("sh", adj.sharpen.toDouble()); put("hdr", adj.hdr.toDouble())
+            if (adj.glow.isOn) put("glo", adj.glow.let { g ->
+                JSONObject().apply {
+                    put("st", g.style.name); put("a", g.amount.toDouble()); put("r", g.range.toDouble())
+                    put("sp", g.spread.toDouble()); put("w", g.warmth.toDouble()); put("t", g.tint.toDouble())
+                    put("c", g.color.toDouble()); put("d", g.direction.toDouble()); put("so", g.softness.toDouble())
+                }
+            })
             if (adj.mixerActive) put("mx", JSONArray(adj.mixer.map { it.toDouble() }))
             if (!adj.grade.isIdentity) put("gr", adj.grade.let { gr ->
                 JSONArray(listOf(gr.shadowHue, gr.shadowSat, gr.midHue, gr.midSat, gr.highHue, gr.highSat, gr.balance, gr.blending).map { it.toDouble() })
@@ -66,6 +75,21 @@ data class Recipe(
 
     companion object {
         const val PREFIX = "LUMOBO:"
+
+        private fun decodeGlow(a: JSONObject): Glow {
+            val o = a.optJSONObject("glo")
+            if (o == null) {
+                // Before 1.9 Glow was a single slider: a wide, colour-keeping bloom.
+                val old = a.optDouble("gl", 0.0).toFloat()
+                return if (old > 0f) Glow(GlowStyle.BLOOM, amount = old, range = 0.85f, spread = 0.75f) else Glow()
+            }
+            fun f(k: String, d: Float) = o.optDouble(k, d.toDouble()).toFloat()
+            return Glow(
+                style = runCatching { GlowStyle.valueOf(o.optString("st")) }.getOrDefault(GlowStyle.BLOOM),
+                amount = f("a", 0f), range = f("r", 0.4f), spread = f("sp", 0.5f), warmth = f("w", 0f),
+                tint = f("t", 0f), color = f("c", 1f), direction = f("d", 0f), softness = f("so", 0.15f),
+            )
+        }
         private const val LEGACY_PREFIX = "EMULSION:"
 
         fun decode(text: String?): Recipe? {
@@ -88,7 +112,7 @@ data class Recipe(
                         tint = a.f("n", 0f), saturation = a.f("sat", 0f), fade = a.f("f", 0f),
                         whites = a.f("wh", 0f), blacks = a.f("bk", 0f), vibrance = a.f("vi", 0f),
                         texture = a.f("tx", 0f), clarity = a.f("cl", 0f), dehaze = a.f("dz", 0f),
-                        sharpen = a.f("sh", 0f), hdr = a.f("hdr", 0f), glow = a.f("gl", 0f),
+                        sharpen = a.f("sh", 0f), hdr = a.f("hdr", 0f), glow = decodeGlow(a),
                         mixer = a.optJSONArray("mx")?.let { arr -> List(24) { arr.optDouble(it, 0.0).toFloat() } } ?: Adjustments.MIXER_ZERO,
                         grade = a.optJSONArray("gr")?.let { arr ->
                             fun v(i: Int, d: Float) = arr.optDouble(i, d.toDouble()).toFloat()

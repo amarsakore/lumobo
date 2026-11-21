@@ -246,6 +246,7 @@ class EditorController(
             val a = adj
             val f = fx
             val crop = cropMode
+            val show = showGlow
             val g = if (crop) geo.uncropped() else geo
             busy = true
             try {
@@ -256,7 +257,7 @@ class EditorController(
                 val (sw, sh) = sourceSize
                 val (w, h) = GlRenderer.outputSize(sw, sh, g)
                 val target = buffer(idx, w, h)
-                Engine.renderer.onGl { scan = p.look.scan; renderPreview(lut, a, f, p.isMono, g, target) }
+                Engine.renderer.onGl { scan = p.look.scan; this.showGlow = show; renderPreview(lut, a, f, p.isMono, g, target) }
                 val hist = if (wantHistogram) withContext(Dispatchers.Default) { histogramOf(target) } else null
                 val shown = if (crop) target else withContext(Dispatchers.Default) {
                     if (f.dateStamp) Overlays.drawDateStamp(target, captureDate, settings.dateColor, settings.dateFormat)
@@ -405,6 +406,16 @@ class EditorController(
         }
     }
 
+    /** Glow panel: preview just the light that glows (never saved). */
+    var showGlow by mutableStateOf(false)
+        private set
+
+    fun previewGlow(on: Boolean) {
+        if (showGlow == on) return
+        showGlow = on
+        invalidate()
+    }
+
     /** Star eraser: while on, dragging on the photo paints areas that get no stars. */
     var starBrush by mutableStateOf(false)
     /** Eraser size, 0..1 (about 2% to 16% of the photo's width). */
@@ -519,7 +530,7 @@ class EditorController(
             for (b in longArrayOf(budget, minOf(budget, 24_000_000L), 12_000_000L)) {
                 try {
                     val full = withContext(Dispatchers.IO) { Images.decode(context, uri, maxEdge, b) }
-                    out = Engine.renderer.onGl { scan = p.look.scan; renderFull(full, lut, a, f, p.isMono, g) }
+                    out = Engine.renderer.onGl { scan = p.look.scan; this.showGlow = false; renderFull(full, lut, a, f, p.isMono, g) }
                     break
                 } catch (oom: OutOfMemoryError) {
                     Log.w(TAG, "OOM at $b px, retrying smaller")

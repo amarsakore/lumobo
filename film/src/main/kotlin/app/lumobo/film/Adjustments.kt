@@ -87,6 +87,54 @@ data class Grade(
     val isIdentity get() = shadowSat == 0f && midSat == 0f && highSat == 0f
 }
 
+/** Glow looks. Lightroom's five (Bloom, Diffusion, Halation, Motion, Streak) plus Orton. */
+enum class GlowStyle(val label: String, val blurb: String) {
+    BLOOM("Bloom", "Bright lights spill a soft haze, in their own colour."),
+    DIFFUSION("Diffusion", "Light scatters into the shadows. Dreamy, soft, gentler contrast."),
+    HALATION("Halation", "Film halation. Red-orange halos hug the brightest lights."),
+    ORTON("Orton", "The classic Orton glow. Luminous, painterly, rich colour."),
+    MOTION("Motion", "Light trails off one side of each light, like a moving camera."),
+    STREAK("Streak", "Anamorphic streaks run through each light, both ways."),
+    ;
+    val directional get() = this == MOTION || this == STREAK
+
+    /** Starting Range when this look is first switched on. */
+    val defaultRange get() = when (this) {
+        BLOOM -> 0.4f; DIFFUSION -> 0.75f; HALATION -> 0.3f; ORTON -> 0.5f; MOTION, STREAK -> 0.25f
+    }
+}
+
+/**
+ * Glow: light spreading from the bright parts of the photo, as one of [GlowStyle].
+ * Beyond Lightroom: each light can glow in its own colour (Lightroom's Bloom and Streak are
+ * white only), Warmth and Tint give full colour control (Halation too), there's an Orton look,
+ * and the light that glows can be shown on its own while adjusting.
+ */
+data class Glow(
+    val style: GlowStyle = GlowStyle.BLOOM,
+    val amount: Float = 0f,      // 0..1
+    val range: Float = 0.4f,     // 0..1: 0 only the brightest lights glow, 1 reaches into the midtones
+    val spread: Float = 0.5f,    // 0..1: how far the light reaches (streak length for Motion / Streak)
+    val warmth: Float = 0f,      // -1..1 cool .. warm (Halation: yellow .. deep red)
+    val tint: Float = 0f,        // -1..1 green .. magenta
+    val color: Float = 1f,       // 0..1: 0 white light, 1 each light glows in its own colour
+    val direction: Float = 0f,   // degrees 0..360 on the photo, 0 = to the right (Motion / Streak)
+    val softness: Float = 0.15f, // 0..1 streak width (Motion / Streak)
+) {
+    val isOn get() = amount > 0f
+
+    /**
+     * Switch look. A glow that was off starts at a visible amount with the look's own Range; a
+     * Range the user hasn't touched follows the new look (Diffusion's wide range would flood a
+     * Streak), while one they set is kept.
+     */
+    fun withStyle(s: GlowStyle) = when {
+        !isOn -> copy(style = s, amount = 0.5f, range = s.defaultRange)
+        range == style.defaultRange -> copy(style = s, range = s.defaultRange)
+        else -> copy(style = s)
+    }
+}
+
 /** User adjustments layered on top of a film profile. Bipolar values are -1..1, others 0..1. */
 data class Adjustments(
     val intensity: Float = 1f,
@@ -109,7 +157,7 @@ data class Adjustments(
     val dehaze: Float = 0f,
     val sharpen: Float = 0f,
     val hdr: Float = 0f,
-    val glow: Float = 0f,
+    val glow: Glow = Glow(),
     // Colour mixer: 8 bands x (hue, saturation, luminance), each -1..1
     val mixer: List<Float> = MIXER_ZERO,
     val grade: Grade = Grade(),

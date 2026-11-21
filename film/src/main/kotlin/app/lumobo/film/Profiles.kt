@@ -89,6 +89,15 @@ enum class LensPreset(val label: String, val blurb: String) {
     AMBER("Amber Streak", "Warm golden anamorphic flares across the frame."),
     ;
 
+    companion object {
+        /** Picker order: None, the optical looks, then the distortion lenses last. (Stored by
+         *  ordinal in recipes, so the enum order itself must never change.) */
+        val DISPLAY: List<LensPreset> by lazy {
+            val distort = listOf(FISHEYE, CIRCLE, WIDE)
+            entries.filter { it !in distort } + distort
+        }
+    }
+
     fun applyTo(fx: Effects): Effects {
         // Reset only the lens recipe.
         val base = fx.withLensOf(Effects(starMask = fx.starMask)).copy(lens = ordinal)

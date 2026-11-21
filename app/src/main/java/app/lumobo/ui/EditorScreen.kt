@@ -63,6 +63,7 @@ import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.CropFree
 import androidx.compose.material.icons.outlined.FilterVintage
 import androidx.compose.material.icons.outlined.Grain
+import androidx.compose.material.icons.outlined.Flare
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Rotate90DegreesCw
 import androidx.compose.material.icons.outlined.Tune
@@ -154,12 +155,13 @@ internal enum class Tool(val label: String, val icon: ImageVector) {
     CURVES("Curves", Icons.AutoMirrored.Outlined.ShowChart),
     DETAIL("Detail", Icons.Outlined.Details),
     EFFECTS("Effects", Icons.Outlined.Grain),
+    GLOW("Glow", Icons.Outlined.Flare),
     LENS("Lens", Icons.Outlined.Camera),
     CROP("Crop", Icons.Outlined.Crop),
 }
 
 /** Every tool lives in the bottom bar (it scrolls); Curves opens from Light, My Looks and Frame from Films. */
-private val BAR = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.CROP, Tool.LENS, Tool.DETAIL, Tool.MIXER, Tool.GRADING)
+private val BAR = listOf(Tool.FILMS, Tool.LIGHT, Tool.COLOR, Tool.EFFECTS, Tool.GLOW, Tool.CROP, Tool.LENS, Tool.DETAIL, Tool.MIXER, Tool.GRADING)
 
 /** Tools whose panel can be pulled up to show every control at once. */
 private val FIXED = setOf(Tool.FILMS, Tool.LOOKS, Tool.CROP, Tool.CURVES)
@@ -230,7 +232,7 @@ fun EditorScreen(
     }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP); if (panel != Tool.LENS) editor.starBrush = false }
+    LaunchedEffect(panel) { editor.setCropping(panel == Tool.CROP); if (panel != Tool.LENS) editor.starBrush = false; if (panel != Tool.GLOW) editor.previewGlow(false) }
     // No star or streak left to erase: leave brush mode so the photo takes gestures again.
     LaunchedEffect(editor.fx.star > 0f || editor.fx.streak > 0f) { if (editor.fx.star <= 0f && editor.fx.streak <= 0f) editor.starBrush = false }
     LaunchedEffect(Unit) { if (note != null) toast = note to null }
@@ -596,6 +598,7 @@ fun EditorScreen(
                     Tool.DETAIL -> DetailPanel(editor)
                     Tool.EFFECTS -> EffectsPanel(editor)
                     Tool.LENS -> LensPanel(editor)
+                    Tool.GLOW -> GlowPanel(editor)
                     Tool.CROP -> CropPanel(editor) { straightening = it }
                 }
                       }
@@ -908,7 +911,7 @@ private fun LensPanel(editor: EditorController) {
         }
         Spacer(Modifier.height(8.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(LensPreset.entries) { preset ->
+            items(LensPreset.DISPLAY) { preset ->
                 Column(Modifier.width(56.dp).clickable { editor.updateFx(preset.applyTo(f)) }, horizontalAlignment = Alignment.CenterHorizontally) {
                     val sel = preset == selected
                     Box(
