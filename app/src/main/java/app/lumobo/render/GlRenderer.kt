@@ -52,6 +52,7 @@ class GlRenderer {
     private var progMain = 0
     private var progStreak = 0
     private var progBilateral = 0
+    private var progStars = 0
     private var quadVbo = 0
 
     private var previewTex = 0
@@ -126,6 +127,7 @@ class GlRenderer {
         progPrefilter = program(Shaders.VERTEX, Shaders.PREFILTER)
         progBlur = program(Shaders.VERTEX, Shaders.BLUR)
         progBilateral = program(Shaders.VERTEX, Shaders.BILATERAL)
+        progStars = program(Shaders.VERTEX, Shaders.STARS)
         progMain = program(Shaders.VERTEX, Shaders.MAIN)
         progStreak = program(Shaders.VERTEX, Shaders.STREAK)
 
@@ -377,6 +379,11 @@ class GlRenderer {
         previewH = bitmap.height
         analyseScene(bitmap)
         uploadGainmap(bitmap)
+        lightMap = runCatching {
+            val contents = if (Build.VERSION.SDK_INT >= 34 && hasGainmap) bitmap.gainmap?.gainmapContents else null
+            LightMap.build(bitmap, contents, gainSingle, gainLog, gainBase)
+        }.onFailure { Log.w(TAG, "light map failed", it) }.getOrNull()
+        lightsKey = null
         val s = FX_LONG_EDGE.toFloat() / max(previewW, previewH)
         val w = max(16, (previewW * s).roundToInt())
         val h = max(16, (previewH * s).roundToInt())
@@ -694,60 +701,81 @@ class GlRenderer {
             }
         }
         if (fx.star > 0f || fx.streak > 0f) {
-            prefilter(2, fxFbo[6])
-            // Mip levels of the star light, so each light's total output (its density) can be
-            // read to size its rays.
-            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
-            GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
-            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_LINEAR)
+            // One star / flare per light source found in the photo (see LightMap).
+            val lights = lightsFor(lg, fx)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fxFbo[7])
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
-            GLES30.glEnable(GLES30.GL_BLEND)
-            GLES30.glBlendFunc(GLES30.GL_ONE, GLES30.GL_ONE)
-            GLES30.glUseProgram(progStreak)
-            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
-            GLES30.glUniform1i(uniform(progStreak, "uTex"), 0)
-            GLES30.glUniform1f(uniform(progStreak, "uOneSided"), 0f)
-            GLES30.glUniform1f(uniform(progStreak, "uDensOn"), 1f)
-            GLES30.glUniform1f(uniform(progStreak, "uDensLod"), 3.5f + log2(scale.coerceAtLeast(0.25f)))
-            GLES30.glUniform1f(uniform(progStreak, "uRayLod"), 2f)
-            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f, disperse: Float = 0.06f, rayLod: Float = 2f) {
-                GLES30.glUniform1f(uniform(progStreak, "uSpectral"), spectral)
-                GLES30.glUniform1f(uniform(progStreak, "uRayLod"), rayLod)
-                GLES30.glUniform1f(uniform(progStreak, "uDisperse"), disperse)
-                val (dx, dy) = displayToSource(displayDeg, geo)
-                GLES30.glUniform2f(uniform(progStreak, "uDir"), dx * stepTexels / fxW, dy * stepTexels / fxH)
-                GLES30.glUniform1i(uniform(progStreak, "uTaps"), taps)
-                GLES30.glUniform1f(uniform(progStreak, "uDecay"), decay)
-                GLES30.glUniform3f(uniform(progStreak, "uTint"), r, g, b)
+            if (lights.isNotEmpty()) {
+                val p = progStars
+                GLES30.glUseProgram(p)
+                val short = min(fxW, fxH).toFloat()
+                val longOverShort = max(fxW, fxH) / short
+                val n = min(lights.size, MAX_LIGHTS)
+                val pts = FloatArray(MAX_LIGHTS * 4)
+                val cols = FloatArray(MAX_LIGHTS * 4)
+                val eMax = lights.maxOf { it.energy }.coerceAtLeast(1e-3f)
+                for (i in 0 until n) {
+                    val l = lights[i]
+                    // Visible size follows the light's total output (density): the sun throws a
+                    // long star, a small glint a short twinkle.
+                    val size = (0.35f + 0.2f * log2(1f + l.energy / 4f)).coerceIn(0.3f, 2.3f)
+                    pts[i * 4] = l.x; pts[i * 4 + 1] = l.y
+                    pts[i * 4 + 2] = 0.1f * size
+                    pts[i * 4 + 3] = l.radius * longOverShort
+                    // Brightness follows the light's own brightness, fainter lights fade.
+                    // A filter sends a small share of the light into its rays, so they show by how
+                    // far the light outshines white.
+                    val k = 1.5f * (l.peak - 0.6f).coerceIn(0.15f, 2f) * (0.25f + 0.75f * kotlin.math.sqrt(l.energy / eMax)) * l.point
+                    val sat = if (mono) 0f else 0.6f
+                    cols[i * 4] = k * (1f + (l.cr - 1f) * sat)
+                    cols[i * 4 + 1] = k * (1f + (l.cg - 1f) * sat)
+                    cols[i * 4 + 2] = k * (1f + (l.cb - 1f) * sat)
+                }
+                GLES30.glUniform1i(uniform(p, "uCount"), n)
+                GLES30.glUniform4fv(uniform(p, "uPt"), MAX_LIGHTS, pts, 0)
+                GLES30.glUniform4fv(uniform(p, "uCol"), MAX_LIGHTS, cols, 0)
+                val arms = (fx.starPoints / 2).coerceIn(2, 4)
+                val dirs = FloatArray(8)
+                for (i in 0 until arms) {
+                    val (dx, dy) = displayToSource(fx.starAngle * (180.0 / arms) + i * 180.0 / arms, geo)
+                    dirs[i * 2] = dx; dirs[i * 2 + 1] = dy
+                }
+                GLES30.glUniform1i(uniform(p, "uArms"), arms)
+                GLES30.glUniform2fv(uniform(p, "uDir"), 4, dirs, 0)
+                GLES30.glUniform2f(uniform(p, "uAspect"), fxW / short, fxH / short)
+                GLES30.glUniform1f(uniform(p, "uPx"), 1f / short)
+                GLES30.glUniform1f(uniform(p, "uStarAmt"), fx.star.coerceIn(0f, 1f) * 1.5f)
+                GLES30.glUniform1f(uniform(p, "uStarLen"), 0.3f + 1.3f * fx.starLength.coerceIn(0f, 1f))
+                GLES30.glUniform1f(uniform(p, "uSoft"), fx.starSoft.coerceIn(0f, 1f))
+                GLES30.glUniform1f(uniform(p, "uSpectral"), fx.starSpectral.coerceIn(0f, 1f))
+                // Anamorphic: cool blue to warm amber; Rainbow splits it like a prism.
+                val w = fx.streakWarm.coerceIn(0f, 1f)
+                val (sx, sy) = displayToSource(0.0, geo)
+                GLES30.glUniform1f(uniform(p, "uStreakAmt"), fx.streak.coerceIn(0f, 1f) * 1.2f)
+                GLES30.glUniform2f(uniform(p, "uStreakDir"), sx, sy)
+                GLES30.glUniform1f(uniform(p, "uStreakLen"), 3.2f)
+                GLES30.glUniform3f(uniform(p, "uStreakTint"), 0.35f + 0.65f * w, 0.6f + 0.02f * w, 1f - 0.7f * w)
+                GLES30.glUniform1f(uniform(p, "uStreakSpectral"), if (fx.star > 0f) 0f else fx.starSpectral.coerceIn(0f, 1f))
                 drawQuad()
             }
-            if (fx.star > 0f) {
-                val arms = (fx.starPoints / 2).coerceIn(2, 4)
-                val step = (0.9f + fx.starLength * 2.4f) * scale
-                val k = fx.star * 2.4f
-                for (i in 0 until arms) {
-                    val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
-                    // A gentle falloff: rays taper slowly over their length, as through a real
-                    // filter, instead of piling up into a round blob at the light.
-                    arm(deg, step, 64, 0.024f, k, k * 0.97f, k * 0.92f, fx.starSpectral, rayLod = fx.starSoft.coerceIn(0f, 1f) * 2.4f)
-                }
-            }
-            if (fx.streak > 0f) {
-                val k = fx.streak * 5f
-                // Cool anamorphic blue to warm amber; Rainbow splits it like a prism.
-                val w = fx.streakWarm.coerceIn(0f, 1f)
-                // The cylinder's flare: a thin bright line through each light, inside a broad,
-                // soft band of the same colour.
-                val sr = k * (0.35f + 0.65f * w); val sg = k * (0.6f + 0.02f * w); val sb = k * (1f - 0.7f * w)
-                arm(0.0, 1.7f * scale, 64, 0.022f, sr, sg, sb, fx.starSpectral, disperse = 0.02f, rayLod = 0.3f)
-                arm(0.0, 1.7f * scale, 64, 0.03f, sr * 0.35f, sg * 0.35f, sb * 0.35f, 0f, disperse = 0.02f, rayLod = 3f)
-            }
-            GLES30.glDisable(GLES30.GL_BLEND)
         }
+    }
+
+    // ── Light sources ──
+    private var lightMap: LightMap? = null
+    private var lightsKey: Any? = null
+    private var lightsCache: List<LightMap.Light> = emptyList()
+
+    /** The photo's light sources at this exposure, threshold and eraser mask (cached). */
+    private fun lightsFor(gain: FloatArray, fx: Effects): List<LightMap.Light> {
+        val m = lightMap ?: return emptyList()
+        val key = listOf(gain.toList(), fx.starThreshold, fx.starMask, System.identityHashCode(m))
+        if (key != lightsKey) {
+            lightsCache = m.find(gain, ((fx.starThreshold - 0.3f) / 0.65f).coerceIn(0f, 1f), MAX_LIGHTS, fx.starMask)
+            lightsKey = key
+        }
+        return lightsCache
     }
 
     private fun mainPass(srcTex: Int, srcW: Int, srcH: Int, w: Int, h: Int, lutTex: Int, lutSize: Int, adj: Adjustments, fx: Effects, mono: Boolean, geo: Geometry) {
@@ -1033,6 +1061,7 @@ class GlRenderer {
         private const val TAG = "LumoboGL"
         private const val GRAIN_SIZE = 512
         private const val FX_LONG_EDGE = 640
+        private const val MAX_LIGHTS = 48
         private const val DEBUG_GAIN = false
         private const val MASK_SIZE = 256
     }

@@ -340,6 +340,97 @@ void main() {
 }
 """
 
+    /**
+     * Star filter and anamorphic flare, drawn per light source (found by LightMap): one star
+     * per light, as a real filter makes. Rays fall off as a power law along their length and
+     * are as wide as the light's core (soft) or a fine line (crisp), tapering out; longer
+     * wavelengths reach a little further; the rainbow of a diffraction filter runs blue (near)
+     * to red (far) per order. The anamorphic flare is a thin line in a broad soft band.
+     */
+    const val STARS = """#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform int uCount;
+uniform vec4 uPt[48];     // x, y (source uv), base ray length, core radius (short-side units)
+uniform vec4 uCol[48];    // colour x brightness of each light
+uniform int uArms;        // ray pairs (lines through the light)
+uniform vec2 uDir[4];     // their directions (source pixel space, unit)
+uniform vec2 uAspect;     // fx size over its short side
+uniform float uPx;        // one fx texel, short-side units
+uniform float uStarAmt;   // 0 = no star
+uniform float uStarLen;   // ray length multiplier (Star size)
+uniform float uSoft;      // ray softness
+uniform float uSpectral;  // rainbow
+uniform float uStreakAmt; // 0 = no anamorphic flare
+uniform vec2 uStreakDir;
+uniform float uStreakLen;
+uniform vec3 uStreakTint;
+uniform float uStreakSpectral;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+// A diffraction order's spectrum along the ray: blue nearest the light, red furthest; the
+// next order repeats it further out, fainter.
+vec3 spectrum(float t) {
+    float ord = t * 2.6;
+    float ph = fract(ord);
+    return clamp(1.0 - abs(vec3(ph) - vec3(0.80, 0.52, 0.24)) * 3.4, 0.0, 1.0) / (1.0 + 0.6 * floor(ord));
+}
+vec3 along(float t, float k) {
+    vec3 x = t * k / vec3(1.06, 1.0, 0.94);   // red reaches a little further than blue
+    return (1.0 - smoothstep(0.7, 1.0, t)) / (1.0 + x * x);
+}
+void main() {
+    vec2 p = vUv * uAspect;
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 48; i++) {
+        if (i >= uCount) break;
+        vec2 d = p - uPt[i].xy * uAspect;
+        float base = uPt[i].z;
+        float rc = max(uPt[i].w, uPx);
+        float reach = max(base * uStarLen * step(0.001, uStarAmt), base * uStreakLen * step(0.001, uStreakAmt)) + 4.0 * rc;
+        if (dot(d, d) > reach * reach) continue;
+        vec3 col = uCol[i].rgb;
+        if (uStarAmt > 0.0) {
+            float L = base * uStarLen;
+            // The light itself, scattered a little by the filter: a small soft core glow.
+            float g = 1.5 * rc;
+            acc += col * uStarAmt * 0.04 * exp(-0.5 * dot(d, d) / (g * g));
+            for (int a = 0; a < 4; a++) {
+                if (a >= uArms) break;
+                vec2 dir = uDir[a];
+                float al = abs(dot(d, dir));
+                float t = al / L;
+                if (t >= 1.0) continue;
+                // Spikes come out of the light's edge; they don't pile up on the light itself.
+                float emerge = mix(0.12, 1.0, smoothstep(0.5 * rc, 3.0 * rc, al));
+                float ac = abs(dot(d, vec2(-dir.y, dir.x)));
+                float w0 = max(rc * mix(0.3, 1.0, uSoft), uPx * 0.7);
+                float w = mix(w0, max(w0 * 0.3, uPx * 0.6), t);
+                vec3 c = col;
+                if (uSpectral > 0.0) c = mix(col, dot(col, LUMA) * spectrum(t) * 1.6, uSpectral * smoothstep(0.03, 0.18, t));
+                acc += c * uStarAmt * emerge * along(t, 3.2) * exp(-0.5 * ac * ac / (w * w));
+            }
+        }
+        if (uStreakAmt > 0.0) {
+            float L = base * uStreakLen;
+            float al = abs(dot(d, uStreakDir));
+            float t = al / L;
+            if (t < 1.0) {
+                float emerge = mix(0.1, 1.0, smoothstep(0.5 * rc, 5.0 * rc, al));
+                float ac = abs(dot(d, vec2(-uStreakDir.y, uStreakDir.x)));
+                float lw = max(rc * 0.3, uPx * 0.7);
+                float bw = rc * 2.5 + uPx * 3.0;
+                float prof = exp(-0.5 * ac * ac / (lw * lw)) + 0.3 * exp(-0.5 * ac * ac / (bw * bw));
+                vec3 tint = uStreakTint;
+                if (uStreakSpectral > 0.0) tint = mix(tint, spectrum(t) * 1.6, uStreakSpectral * smoothstep(0.03, 0.18, t));
+                acc += dot(col, LUMA) * tint * uStreakAmt * emerge * along(t, 2.4) * prof;
+            }
+        }
+    }
+    fragColor = vec4(acc, 1.0);
+}
+"""
+
     const val MAIN = """#version 300 es
 precision highp float;
 precision highp sampler3D;
