@@ -221,6 +221,8 @@ Stars and streaks have **Glint**, **Threshold** (which lights qualify), **Star s
 
 Download `Lumobo.apk` from the [latest release](https://github.com/amarsakore/lumobo/releases/latest) and open it on your phone (allow installs from your browser or file manager when asked). Requires Android 10 or newer with OpenGL ES 3.0; HDR viewing and Ultra HDR export need Android 14 or newer.
 
+Lumobo collects nothing and has no internet access: see the [privacy policy](PRIVACY.md).
+
 Or with a phone connected over USB debugging:
 
 ```bash

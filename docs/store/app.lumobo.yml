@@ -1,0 +1,26 @@
+Categories:
+  - Graphics
+  - Multimedia
+License: MIT
+AuthorName: amarsakore
+SourceCode: https://github.com/amarsakore/lumobo
+IssueTracker: https://github.com/amarsakore/lumobo/issues
+Changelog: https://github.com/amarsakore/lumobo/releases
+
+AutoName: Lumobo
+
+RepoType: git
+Repo: https://github.com/amarsakore/lumobo.git
+
+Builds:
+  - versionName: 2.0.1
+    versionCode: 26
+    commit: v2.0.1
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 2.0.1
+CurrentVersionCode: 26

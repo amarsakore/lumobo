@@ -1,0 +1,39 @@
+Lumobo turns your phone photos into film. Pick from 103 looks inspired by classic slide, negative, cinema, instant and black & white films and cameras, then finish the photo with real-optics lens effects, Glow and a full set of pro editing tools. Everything runs on your phone: nothing is uploaded, there are no ads and no accounts, and the app is about 3 MB.
+
+<b>Film looks</b>
+• 103 looks in 12 families: moody "Vibes" recipes, film simulations, compact-camera image controls, phone-style filters, slide and negative stocks (including infrared), cinema stocks and print, instant film, black & white and toy cameras.
+• Every look is previewed on your own photo. Tap it again for strength, frame and an LED date stamp.
+• Grain, halation and bloom that feel like film, with a "film character" setting from Off to Dreamy.
+• Save your own looks and apply them with one tap.
+
+<b>HDR light engine</b>
+• Reads the HDR data your camera saves inside each photo (Ultra HDR, including ProXDR) to know where the real light is.
+• Stars, streaks, glow, bloom and halation come from real light sources (the sun, lamps, glints on water), not from white walls or sky.
+• Edit and view in HDR on HDR screens, and save Ultra HDR photos.
+• Pull Exposure or Highlights down and clipped skies, windows and lamps come back with their colour.
+
+<b>Glow</b>
+• Bloom, Diffusion, Halation, Orton, Motion and Streak.
+• Amount, Range, Spread, Direction, Softness, Warmth, Tint and Light colour, plus SHOW to see exactly which light glows.
+
+<b>Lens effects</b>
+• 19 recipes modelled on real filters and lenses: star filters, aperture sunstars, diffraction rainbows, anamorphic and amber streaks, prism, Pro-Mist and glimmer diffusion, soft focus, a swirly vintage 50mm, a toy lens, a glowing portrait lens, tilt-shift, swirl and fisheye.
+• One star per light source, sized by how much light it gives. Small glints twinkle, the sun gets one big star.
+• Threshold, star size, rainbow, ray softness, angle and a brush to erase stars.
+
+<b>Pro editing tools</b>
+• Light: exposure, contrast, highlights, shadows, whites, blacks, fade, Auto and point curves.
+• Color: temperature, tint, vibrance, saturation, an 8-band HSL mixer and color grading wheels.
+• Detail: texture, clarity, sharpen, dehaze and HDR, all edge-aware, so there are no halos even at 100.
+• Effects: grain, halation, bloom, vignette, chromatic aberration and light leaks.
+• Crop with aspect presets, straighten, perspective, flip and rotate; frames and film borders.
+
+<b>Made to feel good</b>
+• Every tool in one scrolling bar, undo and redo, hold to compare, a preview mode and gentle haptics.
+• Edits develop into your Developed album as you leave, and every developed photo can be edited again or saved as a copy.
+• Light and dark themes and a Material You accent.
+• Open photos from your gallery or from any app with "Edit in Lumobo".
+
+Lumobo is free and open source (MIT): https://github.com/amarsakore/lumobo
+
+Film, camera and brand names mentioned in the app are trademarks of their owners. Lumobo is not affiliated with or endorsed by them; the looks are original recreations.

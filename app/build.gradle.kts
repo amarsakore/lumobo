@@ -1,19 +1,43 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release signing comes from keystore.properties (never committed). Without it the release build
+// is unsigned, as F-Droid wants (it builds from source and signs with its own key).
+//   storeFile=/path/to/lumobo-upload.jks
+//   storePassword=…
+//   keyAlias=lumobo
+//   keyPassword=…
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "app.lumobo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.lumobo"
         minSdk = 29
-        targetSdk = 35
-        versionCode = 25
-        versionName = "2.0"
+        targetSdk = 36
+        versionCode = 26
+        versionName = "2.0.1"
+    }
+
+    signingConfigs {
+        if (keystoreProps.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -21,7 +45,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
@@ -33,6 +57,12 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    // The dependency list Google encrypts into APKs can't be read by anyone else, so F-Droid
+    // rejects it; app bundles for Play keep it.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
     }
 }
 
