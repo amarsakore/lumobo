@@ -25,8 +25,8 @@ android {
         applicationId = "app.lumobo"
         minSdk = 29
         targetSdk = 36
-        versionCode = 26
-        versionName = "2.0.1"
+        versionCode = 27
+        versionName = "2.0.2"
     }
 
     signingConfigs {

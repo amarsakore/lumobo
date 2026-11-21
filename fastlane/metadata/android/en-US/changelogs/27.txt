@@ -1,0 +1,9 @@
+2.0.2
+• Builds with any Java 17+ (for F-Droid).
+2.0
+• HDR light engine: stars, glow and bloom come from the real light in your photo.
+• Edit, view and save in HDR (Ultra HDR, Android 14+), with highlight recovery.
+• New Glow tool: Bloom, Diffusion, Halation, Orton, Motion and Streak.
+• Lens effects rebuilt on real optics: one star per light, smooth rainbows.
+• Edge-aware detail: no halos at high clarity or sharpness.
+• Save as copy.

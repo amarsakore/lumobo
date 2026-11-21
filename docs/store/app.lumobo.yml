@@ -15,7 +15,7 @@ Repo: https://github.com/amarsakore/lumobo.git
 Builds:
   - versionName: 2.0.1
     versionCode: 26
-    commit: v2.0.1
+    commit: d912002743bd82d392f7269478866891e3b0d9d9
     subdir: app
     gradle:
       - yes

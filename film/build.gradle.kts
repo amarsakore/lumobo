@@ -2,7 +2,15 @@ plugins {
     id("org.jetbrains.kotlin.jvm")
 }
 
-kotlin { jvmToolchain(17) }
+// Compile for Java 17 with whichever JDK runs Gradle (17 or newer) rather than requiring an
+// exact JDK 17 install: F-Droid's build server only has Java 21, and toolchain download is off.
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+kotlin {
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+}
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
