@@ -207,7 +207,13 @@ class GlRenderer {
     // tell real lights (sun, its glints, lamps) from merely white surfaces.
     private var gainTex = 0
     private var gainSingle = false
+    private var gainBase = 0f  // median log2 boost of the photo's gain map
     private var gainLog = FloatArray(15)  // log2 min (3), log2 max (3), gamma (3), eps sdr (3), eps hdr (3)
+
+    // Gain map used by the main pass: the preview's, or the full-resolution photo's when saving.
+    private var mainGainTex = 0
+    private var mainGainSingle = false
+    private var mainGainLog = gainLog
 
     /** Whether the open photo has an HDR gain map. */
     var hasGainmap = false
@@ -220,21 +226,147 @@ class GlRenderer {
         if (Build.VERSION.SDK_INT < 34 || !bitmap.hasGainmap()) return
         runCatching {
             val g = bitmap.gainmap ?: return
-            var c = g.gainmapContents
-            gainSingle = c.config == Bitmap.Config.ALPHA_8
-            if (!gainSingle && c.config != Bitmap.Config.ARGB_8888) c = c.copy(Bitmap.Config.ARGB_8888, false)
-            gainTex = uploadBitmap(c, mipmaps = false)
-            val mn = g.ratioMin; val mx = g.ratioMax; val ga = g.gamma; val es = g.epsilonSdr; val eh = g.epsilonHdr
-            for (i in 0 until 3) {
-                gainLog[i] = log2(mn[i].coerceAtLeast(1e-4f))
-                gainLog[3 + i] = log2(mx[i].coerceAtLeast(1e-4f))
-                gainLog[6 + i] = ga[i].coerceAtLeast(1e-3f)
-                gainLog[9 + i] = es[i]
-                gainLog[12 + i] = eh[i]
-            }
+            val (tex, single) = readGainmap(g, gainLog)
+            gainTex = tex
+            gainSingle = single
+            gainBase = medianBoost(g.gainmapContents, single, gainLog)
             hasGainmap = true
-            Log.i(TAG, "HDR gain map ${c.width}x${c.height} ${c.config} max ${mx.joinToString()}")
+            Log.i(TAG, "HDR gain map ${g.gainmapContents.width}x${g.gainmapContents.height} max ${g.ratioMax.joinToString()} gamma ${g.gamma.joinToString()} median ${"%.2f".format(gainBase)} stops")
         }.onFailure { Log.w(TAG, "gain map unavailable", it) }
+    }
+
+    /** Binds a gain map (or none, when [tex] is 0) to [unit] of [prog], with its metadata. */
+    private fun bindGain(prog: Int, unit: Int, tex: Int, single: Boolean, gl: FloatArray) {
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE0 + unit)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (tex != 0) tex else grainTex)
+        GLES30.glUniform1i(uniform(prog, "uGainTex"), unit)
+        GLES30.glUniform1f(uniform(prog, "uGmOn"), if (tex != 0) 1f else 0f)
+        GLES30.glUniform1f(uniform(prog, "uGmSingle"), if (single) 1f else 0f)
+        GLES30.glUniform3f(uniform(prog, "uGmMin"), gl[0], gl[1], gl[2])
+        GLES30.glUniform3f(uniform(prog, "uGmMax"), gl[3], gl[4], gl[5])
+        GLES30.glUniform3f(uniform(prog, "uGmGamma"), gl[6], gl[7], gl[8])
+        GLES30.glUniform3f(uniform(prog, "uGmEpsS"), gl[9], gl[10], gl[11])
+        GLES30.glUniform3f(uniform(prog, "uGmEpsH"), gl[12], gl[13], gl[14])
+        GLES30.glUniform1f(uniform(prog, "uGmBase"), if (tex != 0) gainBase else 0f)
+    }
+
+    /** Median log2 boost of a gain map: how much the camera lifts the picture as a whole. */
+    private fun medianBoost(c: Bitmap, single: Boolean, gl: FloatArray): Float {
+        val step = max(1, kotlin.math.sqrt(c.width * c.height / 20000.0).toInt())
+        val row = IntArray(c.width)
+        val vals = ArrayList<Float>()
+        var y = 0
+        while (y < c.height) {
+            c.getPixels(row, 0, c.width, 0, y, c.width, 1)
+            var x = 0
+            while (x < c.width) {
+                val p = row[x]
+                val g = (if (single) (p ushr 24) and 255 else (p shr 8) and 255) / 255f
+                val t = g.toDouble().pow(gl[7].toDouble()).toFloat()
+                vals.add(gl[1] + (gl[4] - gl[1]) * t)
+                x += step
+            }
+            y += step
+        }
+        if (vals.isEmpty()) return 0f
+        vals.sort()
+        return vals[vals.size / 2].coerceAtLeast(0f)
+    }
+
+    /** Reads a gain map's contents into a texture and its metadata into [out] (15 floats). */
+    private fun readGainmap(g: android.graphics.Gainmap, out: FloatArray): Pair<Int, Boolean> {
+        var c = g.gainmapContents
+        val single = c.config == Bitmap.Config.ALPHA_8
+        if (!single && c.config != Bitmap.Config.ARGB_8888) c = c.copy(Bitmap.Config.ARGB_8888, false)
+        val tex = uploadBitmap(c, mipmaps = false)
+        val mn = g.ratioMin; val mx = g.ratioMax; val ga = g.gamma; val es = g.epsilonSdr; val eh = g.epsilonHdr
+        for (i in 0 until 3) {
+            out[i] = log2(mn[i].coerceAtLeast(1e-4f))
+            out[3 + i] = log2(mx[i].coerceAtLeast(1e-4f))
+            out[6 + i] = ga[i].coerceAtLeast(1e-3f)
+            out[9 + i] = es[i]
+            out[12 + i] = eh[i]
+        }
+        return tex to single
+    }
+
+    // ── HDR output: the edited photo's own gain map, so it shows and saves as HDR ──
+    private var gainFbo = 0
+    private var gainOutTex = 0
+    private var gainW = 0
+    private var gainH = 0
+    private val gainBuffers = HashMap<Int, Bitmap>()
+    private var debugFrames = 0
+
+    private fun ensureGainOut(w: Int, h: Int) {
+        if (w == gainW && h == gainH && gainFbo != 0) return
+        if (gainFbo != 0) GLES30.glDeleteFramebuffers(1, intArrayOf(gainFbo), 0)
+        if (gainOutTex != 0) GLES30.glDeleteTextures(1, intArrayOf(gainOutTex), 0)
+        // Create it on a spare unit: binding it on the active one would replace a texture the
+        // main pass samples (and then it would read its own output).
+        GLES30.glActiveTexture(GLES30.GL_TEXTURE15)
+        gainOutTex = genTexture()
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, gainOutTex)
+        GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, w, h, 0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null)
+        texParams(GLES30.GL_NEAREST, GLES30.GL_NEAREST, GLES30.GL_CLAMP_TO_EDGE)
+        val ids = IntArray(1)
+        GLES30.glGenFramebuffers(1, ids, 0)
+        gainFbo = ids[0]
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, gainFbo)
+        GLES30.glFramebufferTexture2D(GLES30.GL_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0, GLES30.GL_TEXTURE_2D, gainOutTex, 0)
+        gainW = w
+        gainH = h
+    }
+
+    /** Whether edits show and save as HDR: Android 14+ and the HDR light slider above zero. */
+    private fun hdrOut(adj: Adjustments) = Build.VERSION.SDK_INT >= 34 && adj.hdrLight > 0f
+
+    /** Top of the edited photo's HDR range, in stops: the photo's own (or an estimate) plus room for added light. */
+    private fun outStops(adj: Adjustments, fx: Effects): Float {
+        val inStops = if (hasGainmap) maxOf(gainLog[3], gainLog[4], gainLog[5]) else 2f
+        val adds = fx.star > 0f || fx.streak > 0f || fx.bloom > 0f || fx.mist > 0f || fx.halation > 0f || adj.glow.isOn
+        return (inStops * adj.hdrLight + if (adds) 1.2f else 0f).coerceIn(0.5f, 3.5f)
+    }
+
+    /**
+     * After [mainPass]: render the edited photo's gain map at 1/[div] resolution and attach it to
+     * [bitmap] (or clear it), so Compose shows it in HDR and JPEG saving writes Ultra HDR.
+     */
+    private fun attachGainmap(bitmap: Bitmap, adj: Adjustments, fx: Effects, div: Int, reuse: Boolean) {
+        if (Build.VERSION.SDK_INT < 34) return
+        if (!hdrOut(adj)) { if (bitmap.hasGainmap()) bitmap.gainmap = null; return }
+        val gw = max(1, bitmap.width / div)
+        val gh = max(1, bitmap.height / div)
+        ensureGainOut(gw, gh)
+        GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, gainFbo)
+        GLES30.glViewport(0, 0, gw, gh)
+        GLES30.glUseProgram(progMain)
+        bindGain(progMain, 14, mainGainTex, mainGainSingle, mainGainLog)
+        GLES30.glUniform1i(uniform(progMain, "uGainPass"), 1)
+        drawQuad()
+        GLES30.glUniform1i(uniform(progMain, "uGainPass"), 0)
+        val key = System.identityHashCode(bitmap)
+        val gb = gainBuffers[key]?.takeIf { reuse && it.width == gw && it.height == gh && !it.isRecycled }
+            ?: Bitmap.createBitmap(gw, gh, Bitmap.Config.ARGB_8888).also { if (reuse) gainBuffers[key] = it }
+        readInto(gb, gw, gh)
+        if (DEBUG_GAIN && debugFrames++ < 3) {
+            val row = IntArray(gw); val y0 = gh / 2
+            gb.getPixels(row, 0, gw, 0, y0, gw, 1)
+            val cx = gw / 2
+            Log.i(TAG, "gain ${gw}x$gh row$y0: " + (cx until min(gw, cx + 40)).joinToString(" ") { ((row[it] shr 16) and 255).toString() })
+            gb.getPixels(row, 0, gw, 0, y0 + 1, gw, 1)
+            Log.i(TAG, "gain row${y0 + 1}: " + (cx until min(gw, cx + 40)).joinToString(" ") { ((row[it] shr 16) and 255).toString() })
+        }
+        val m = 2f.pow(outStops(adj, fx))
+        bitmap.gainmap = android.graphics.Gainmap(gb).apply {
+            setRatioMin(1f, 1f, 1f)
+            setRatioMax(m, m, m)
+            setGamma(1f, 1f, 1f)
+            setEpsilonSdr(0f, 0f, 0f)
+            setEpsilonHdr(0f, 0f, 0f)
+            setMinDisplayRatioForHdrTransition(1f)
+            setDisplayRatioForFullHdr(m)
+        }
     }
 
     /** Upload the working (screen-sized) image. Must be ARGB_8888, software. */
@@ -452,17 +584,7 @@ class GlRenderer {
             GLES30.glUniform1f(uniform(progPrefilter, "uGlowSat"), if (mono) 0f else glow.color.coerceIn(0f, 1f))
             GLES30.glUniform1f(uniform(progPrefilter, "uGlowAll"), if (glow.style == GlowStyle.ORTON) 1f else 0f)
             GLES30.glUniform1f(uniform(progPrefilter, "uGlowPeak"), if (glow.style == GlowStyle.STREAK) 1f else 0f)
-            GLES30.glActiveTexture(GLES30.GL_TEXTURE2)
-            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, if (hasGainmap) gainTex else grainTex)
-            GLES30.glUniform1i(uniform(progPrefilter, "uGainTex"), 2)
-            GLES30.glUniform1f(uniform(progPrefilter, "uGmOn"), if (hasGainmap) 1f else 0f)
-            GLES30.glUniform1f(uniform(progPrefilter, "uGmSingle"), if (gainSingle) 1f else 0f)
-            val gl = gainLog
-            GLES30.glUniform3f(uniform(progPrefilter, "uGmMin"), gl[0], gl[1], gl[2])
-            GLES30.glUniform3f(uniform(progPrefilter, "uGmMax"), gl[3], gl[4], gl[5])
-            GLES30.glUniform3f(uniform(progPrefilter, "uGmGamma"), gl[6], gl[7], gl[8])
-            GLES30.glUniform3f(uniform(progPrefilter, "uGmEpsS"), gl[9], gl[10], gl[11])
-            GLES30.glUniform3f(uniform(progPrefilter, "uGmEpsH"), gl[12], gl[13], gl[14])
+            bindGain(progPrefilter, 2, gainTex, gainSingle, gainLog)
             // Finer mip for glint search: one level below what the fx resolution would pick.
             GLES30.glUniform1f(uniform(progPrefilter, "uFineLod"), (log2(max(previewW, previewH) / max(fxW, fxH).toFloat()) - 1f).coerceAtLeast(0f))
             GLES30.glUniform2f(uniform(progPrefilter, "uFine"), 0.25f / fxW, 0.25f / fxH)
@@ -563,6 +685,9 @@ class GlRenderer {
                 GLES30.glUniform3f(uniform(progStreak, "uTint"), 1f, 1f, 1f)
                 GLES30.glUniform1f(uniform(progStreak, "uSpectral"), 0f)
                 GLES30.glUniform1f(uniform(progStreak, "uOneSided"), if (glow.style == GlowStyle.MOTION) 1f else 0f)
+                GLES30.glUniform1f(uniform(progStreak, "uDisperse"), if (glow.style == GlowStyle.MOTION) 0f else 0.03f)
+                GLES30.glUniform1f(uniform(progStreak, "uDensOn"), 0f)
+                GLES30.glUniform1f(uniform(progStreak, "uRayLod"), 0f)
                 drawQuad()
                 val soft = (0.6f + 6.4f * glow.softness.coerceIn(0f, 1f)) * scale
                 blur(fxTex[16], fxFbo[17], -dy / fxW, dx / fxH, soft)
@@ -570,6 +695,12 @@ class GlRenderer {
         }
         if (fx.star > 0f || fx.streak > 0f) {
             prefilter(2, fxFbo[6])
+            // Mip levels of the star light, so each light's total output (its density) can be
+            // read to size its rays.
+            GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+            GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
+            GLES30.glGenerateMipmap(GLES30.GL_TEXTURE_2D)
+            GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR_MIPMAP_LINEAR)
             GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, fxFbo[7])
             GLES30.glClearColor(0f, 0f, 0f, 1f)
             GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
@@ -580,8 +711,12 @@ class GlRenderer {
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[6])
             GLES30.glUniform1i(uniform(progStreak, "uTex"), 0)
             GLES30.glUniform1f(uniform(progStreak, "uOneSided"), 0f)
-            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f) {
+            GLES30.glUniform1f(uniform(progStreak, "uDensOn"), 1f)
+            GLES30.glUniform1f(uniform(progStreak, "uDensLod"), 3.5f + log2(scale.coerceAtLeast(0.25f)))
+            GLES30.glUniform1f(uniform(progStreak, "uRayLod"), 2f)
+            fun arm(displayDeg: Double, stepTexels: Float, taps: Int, decay: Float, r: Float, g: Float, b: Float, spectral: Float = 0f, disperse: Float = 0.06f) {
                 GLES30.glUniform1f(uniform(progStreak, "uSpectral"), spectral)
+                GLES30.glUniform1f(uniform(progStreak, "uDisperse"), disperse)
                 val (dx, dy) = displayToSource(displayDeg, geo)
                 GLES30.glUniform2f(uniform(progStreak, "uDir"), dx * stepTexels / fxW, dy * stepTexels / fxH)
                 GLES30.glUniform1i(uniform(progStreak, "uTaps"), taps)
@@ -591,18 +726,20 @@ class GlRenderer {
             }
             if (fx.star > 0f) {
                 val arms = (fx.starPoints / 2).coerceIn(2, 4)
-                val step = (0.7f + fx.starLength * 1.8f) * scale
+                val step = (0.9f + fx.starLength * 2.4f) * scale
                 val k = fx.star * 2.4f
                 for (i in 0 until arms) {
                     val deg = fx.starAngle * (180.0 / arms) + i * 180.0 / arms
-                    arm(deg, step, 48, 0.065f, k, k * 0.97f, k * 0.92f, fx.starSpectral)
+                    // A gentle falloff: rays taper slowly over their length, as through a real
+                    // filter, instead of piling up into a round blob at the light.
+                    arm(deg, step, 64, 0.024f, k, k * 0.97f, k * 0.92f, fx.starSpectral)
                 }
             }
             if (fx.streak > 0f) {
-                val k = fx.streak * 2.8f
+                val k = fx.streak * 5f
                 // Cool anamorphic blue to warm amber; Rainbow splits it like a prism.
                 val w = fx.streakWarm.coerceIn(0f, 1f)
-                arm(0.0, 1.7f * scale, 64, 0.045f, k * (0.35f + 0.65f * w), k * (0.6f + 0.02f * w), k * (1f - 0.7f * w), fx.starSpectral)
+                arm(0.0, 1.7f * scale, 64, 0.022f, k * (0.35f + 0.65f * w), k * (0.6f + 0.02f * w), k * (1f - 0.7f * w), fx.starSpectral, disperse = 0.02f)
             }
             GLES30.glDisable(GLES30.GL_BLEND)
         }
@@ -660,6 +797,15 @@ class GlRenderer {
         glowTint(glow, mono).let { GLES30.glUniform3f(uniform(p, "uGlowTint"), it[0], it[1], it[2]) }
         GLES30.glUniform1f(uniform(p, "uGlowShow"), if (showGlow && glow.isOn) 1f else 0f)
         GLES30.glUniform1f(uniform(p, "uGlowLift"), 0.8f + glow.range.coerceIn(0f, 1f))
+        // HDR: highlight recovery when darkening, the photo's gain map (full resolution when saving).
+        bindGain(p, 14, mainGainTex, mainGainSingle, mainGainLog)
+        val recover = if (mainGainTex == 0) 0f else
+            ((-adj.exposure * 2.5f).coerceIn(0f, 1f) + (-adj.highlights).coerceIn(0f, 1f) + (-adj.whites * 0.5f).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+        GLES30.glUniform1f(uniform(p, "uRecover"), recover)
+        GLES30.glUniform1i(uniform(p, "uGainPass"), 0)
+        GLES30.glUniform1f(uniform(p, "uHdrAmt"), adj.hdrLight.coerceIn(0f, 1f))
+        GLES30.glUniform1f(uniform(p, "uOutLogMax"), outStops(adj, fx))
+        GLES30.glUniform1f(uniform(p, "uAroundLod"), log2(max(srcW, srcH) / FX_LONG_EDGE.toFloat()).coerceAtLeast(0f) + 3f)
         GLES30.glUniform1f(uniform(p, "uGlowT"), 0.95f - 0.85f * glow.range.coerceIn(0f, 1f))
         GLES30.glUniform1f(uniform(p, "uGlowSat"), if (mono) 0f else glow.color.coerceIn(0f, 1f))
         lightGains(adj).let { GLES30.glUniform3f(uniform(p, "uLightGain"), it[0], it[1], it[2]) }
@@ -737,8 +883,10 @@ class GlRenderer {
     fun renderPreview(lut: LutCache.Lut, adj: Adjustments, fx: Effects, mono: Boolean, geo: Geometry, target: Bitmap) {
         check(previewTex != 0) { "No preview source" }
         glowPasses(adj, fx, geo, mono)
+        mainGainTex = gainTex; mainGainSingle = gainSingle; mainGainLog = gainLog
         mainPass(previewTex, previewW, previewH, target.width, target.height, lutTexture(lut), lut.size, adj, fx, mono, geo)
         readInto(target, target.width, target.height)
+        attachGainmap(target, adj, fx, div = 2, reuse = true)
     }
 
     /** Render a full-resolution source. Glows come from the resident preview source. */
@@ -749,16 +897,28 @@ class GlRenderer {
         val (w, h) = outputSize(sw, sh, geo)
         // Mip-mapped so Texture samples the same relative scale as the preview.
         val tex = uploadBitmap(source, mipmaps = true)
+        // The full-resolution photo's own gain map, for sharper highlight recovery.
+        val fullLog = FloatArray(15)
+        var fullGain = 0
+        var fullSingle = false
+        if (Build.VERSION.SDK_INT >= 34 && source.hasGainmap()) runCatching {
+            readGainmap(source.gainmap!!, fullLog).let { fullGain = it.first; fullSingle = it.second }
+        }
         source.recycle()
         try {
             glowPasses(adj, fx, geo, mono)
+            if (fullGain != 0) { mainGainTex = fullGain; mainGainSingle = fullSingle; mainGainLog = fullLog }
+            else { mainGainTex = gainTex; mainGainSingle = gainSingle; mainGainLog = gainLog }
             mainPass(tex, sw, sh, w, h, lutTexture(lut), lut.size, adj, fx, mono, geo)
             GLES30.glFinish()
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             readInto(out, w, h)
+            attachGainmap(out, adj, fx, div = 4, reuse = false)
             return out
         } finally {
             GLES30.glDeleteTextures(1, intArrayOf(tex), 0)
+            if (fullGain != 0) GLES30.glDeleteTextures(1, intArrayOf(fullGain), 0)
+            mainGainTex = gainTex; mainGainSingle = gainSingle; mainGainLog = gainLog
             releaseOut()
         }
     }
@@ -868,6 +1028,7 @@ class GlRenderer {
         private const val TAG = "LumoboGL"
         private const val GRAIN_SIZE = 512
         private const val FX_LONG_EDGE = 640
+        private const val DEBUG_GAIN = false
         private const val MASK_SIZE = 256
     }
 }

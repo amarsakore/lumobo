@@ -130,6 +130,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.HdrOff
+import androidx.compose.material.icons.outlined.HdrOn
 import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onSizeChanged
@@ -181,6 +183,17 @@ fun EditorScreen(
     DisposableEffect(editor) {
         editor.start()
         onDispose { editor.dispose() }
+    }
+    // Show the photo in HDR on HDR screens (Android 14+): the preview carries the edited photo's
+    // gain map, which the window draws above SDR white in HDR colour mode.
+    val window = (LocalContext.current as? android.app.Activity)?.window
+    val appSettings = remember { app.lumobo.data.AppSettings.get(context) }
+    val hdrView = appSettings.hdrView
+    DisposableEffect(window, hdrView) {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            window?.colorMode = if (hdrView) android.content.pm.ActivityInfo.COLOR_MODE_HDR else android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT
+        }
+        onDispose { window?.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_DEFAULT }
     }
     // Leaving an edited photo develops it into Developed (library photos always reopen fresh;
     // a developed photo is updated in place). The overlay shows while it develops.
@@ -273,6 +286,15 @@ fun EditorScreen(
                         )
                     }
                 }
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                // HDR view on / off. Off shows the photo at normal brightness; its HDR light is
+                // still used for stars and glow, and saving still writes Ultra HDR.
+                RoundIconButton(
+                    if (hdrView) Icons.Outlined.HdrOn else Icons.Outlined.HdrOff,
+                    if (hdrView) "Show without HDR" else "Show in HDR", { appSettings.hdrView = !hdrView },
+                    Modifier.size(34.dp), background = if (hdrView) Palette.Amber.copy(alpha = 0.25f) else Color.Transparent,
+                )
             }
             RoundIconButton(
                 if (preview) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,

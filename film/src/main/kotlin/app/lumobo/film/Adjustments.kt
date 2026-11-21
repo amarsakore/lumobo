@@ -158,6 +158,8 @@ data class Adjustments(
     val sharpen: Float = 0f,
     val hdr: Float = 0f,
     val glow: Glow = Glow(),
+    /** 0..1: how much of the photo's HDR light (its gain map, or an estimate) the edit shows and saves. */
+    val hdrLight: Float = 1f,
     // Colour mixer: 8 bands x (hue, saturation, luminance), each -1..1
     val mixer: List<Float> = MIXER_ZERO,
     val grade: Grade = Grade(),

@@ -154,6 +154,11 @@ fun LightPanel(editor: EditorController, onCurves: () -> Unit) {
             FilmSlider("Whites", a.whites, { editor.updateAdj(editor.adj.copy(whites = it)) })
             FilmSlider("Blacks", a.blacks, { editor.updateAdj(editor.adj.copy(blacks = it)) })
             FilmSlider("Fade", a.fade, { editor.updateAdj(editor.adj.copy(fade = it)) }, min = 0f, max = 1f, default = 0f)
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                // How much of the photo's real HDR light (its gain map, or an estimate) shows on
+                // an HDR screen and goes into the saved Ultra HDR photo. 0 = a plain SDR photo.
+                FilmSlider("HDR light", a.hdrLight, { editor.updateAdj(editor.adj.copy(hdrLight = it)) }, min = 0f, max = 1f, default = 1f)
+            }
         }
     }
 }

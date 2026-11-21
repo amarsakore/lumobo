@@ -36,7 +36,7 @@ data class Recipe(
             put("n", adj.tint.toDouble()); put("sat", adj.saturation.toDouble()); put("f", adj.fade.toDouble())
             put("wh", adj.whites.toDouble()); put("bk", adj.blacks.toDouble()); put("vi", adj.vibrance.toDouble())
             put("tx", adj.texture.toDouble()); put("cl", adj.clarity.toDouble()); put("dz", adj.dehaze.toDouble())
-            put("sh", adj.sharpen.toDouble()); put("hdr", adj.hdr.toDouble())
+            put("sh", adj.sharpen.toDouble()); put("hdr", adj.hdr.toDouble()); put("hl", adj.hdrLight.toDouble())
             if (adj.glow.isOn) put("glo", adj.glow.let { g ->
                 JSONObject().apply {
                     put("st", g.style.name); put("a", g.amount.toDouble()); put("r", g.range.toDouble())
@@ -112,7 +112,7 @@ data class Recipe(
                         tint = a.f("n", 0f), saturation = a.f("sat", 0f), fade = a.f("f", 0f),
                         whites = a.f("wh", 0f), blacks = a.f("bk", 0f), vibrance = a.f("vi", 0f),
                         texture = a.f("tx", 0f), clarity = a.f("cl", 0f), dehaze = a.f("dz", 0f),
-                        sharpen = a.f("sh", 0f), hdr = a.f("hdr", 0f), glow = decodeGlow(a),
+                        sharpen = a.f("sh", 0f), hdr = a.f("hdr", 0f), glow = decodeGlow(a), hdrLight = a.f("hl", 1f),
                         mixer = a.optJSONArray("mx")?.let { arr -> List(24) { arr.optDouble(it, 0.0).toFloat() } } ?: Adjustments.MIXER_ZERO,
                         grade = a.optJSONArray("gr")?.let { arr ->
                             fun v(i: Int, d: Float) = arr.optDouble(i, d.toDouble()).toFloat()

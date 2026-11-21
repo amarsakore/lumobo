@@ -38,6 +38,26 @@ float toneOf(vec3 s, vec3 gain) {
 }
 """
 
+    /** The photo's Ultra HDR gain map (ProXDR on ColorOS, and most phone cameras now). */
+    private const val GAIN = """
+uniform float uGmOn;
+uniform sampler2D uGainTex;
+uniform float uGmSingle;  // 1: one-channel map (in .a)
+uniform vec3 uGmMin;      // log2 of ratio min / max
+uniform vec3 uGmMax;
+uniform vec3 uGmGamma;    // Android's gamma: applied as pow(G, gamma)
+uniform vec3 uGmEpsS;
+uniform vec3 uGmEpsH;
+// Per-channel log2 boost from SDR to the scene's real HDR light at uv (0 without a gain map).
+vec3 gmLogBoost(vec2 uv) {
+    if (uGmOn < 0.5) return vec3(0.0);
+    vec4 t = texture(uGainTex, uv);
+    vec3 g = uGmSingle > 0.5 ? vec3(t.a) : t.rgb;
+    return mix(uGmMin, uGmMax, pow(clamp(g, 0.0, 1.0), uGmGamma));
+}
+vec3 gmHdr(vec3 sdrLin, vec3 lb) { return max((sdrLin + uGmEpsS) * exp2(lb) - uGmEpsH, 0.0); }
+"""
+
     /**
      * Extracts light for the low-resolution passes.
      * 0 halation highlights, 1 bloom, 2 star/streak glints, 3 whole image, 4 haze (min channel),
@@ -61,19 +81,11 @@ uniform float uGlowT;    // Glow: tone where the glow starts (from Range)
 uniform float uGlowSat;  // Glow: 0 white light, 1 each light keeps its own colour
 uniform float uGlowAll;  // Glow: 1 = the whole photo glows (Orton)
 uniform float uGlowPeak; // Glow: 1 = favour point-like lights (Streak)
-// Ultra HDR gain map (ProXDR on ColorOS, and most phone photos): how much brighter than the
-// SDR image each part of the scene really was.
-uniform float uGmOn;
-uniform sampler2D uGainTex;
-uniform float uGmSingle;  // 1: one-channel map (in .a)
-uniform vec3 uGmMin;      // log2 ratio min / max
-uniform vec3 uGmMax;
-uniform vec3 uGmGamma;
-uniform vec3 uGmEpsS;
-uniform vec3 uGmEpsH;
+uniform float uGmBase;    // the photo's typical gain map boost (median), in stops
 uniform float uFineLod;   // finer mip level for finding tiny glints
 uniform vec2 uFine;       // quarter of an fx texel, in uv
 $COMMON
+$GAIN
 // HDR headroom of the scene here, in stops above the SDR photo. Real lights (sun, its glints
 // on water, lamps) carry stops of it; a white wall carries none. From the photo's gain map, or
 // estimated when it has none.
@@ -88,12 +100,11 @@ float headroom(vec2 uv, vec3 sdrLin) {
         float lift = log2((dot(sdrLin, LUMA) + 0.02) / (around + 0.02));
         return clip * clamp(lift * 0.8, 0.0, 3.0);
     }
-    vec4 t = texture(uGainTex, uv);
-    vec3 g = uGmSingle > 0.5 ? vec3(t.a) : t.rgb;
-    vec3 lb = mix(uGmMin, uGmMax, pow(clamp(g, 0.0, 1.0), 1.0 / uGmGamma));
-    vec3 hdr = max((sdrLin + uGmEpsS) * exp2(lb) - uGmEpsH, 0.0);
+    vec3 hdr = gmHdr(sdrLin, gmLogBoost(uv));
     float ls = dot(sdrLin, LUMA);
-    float h = log2(max(dot(hdr, LUMA), 1e-4) / max(ls, 1e-4));
+    // Relative to the photo's typical boost: camera gain maps lift the whole picture for its
+    // HDR version, so only light standing above that lift is a light source.
+    float h = log2(max(dot(hdr, LUMA), 1e-4) / max(ls, 1e-4)) - uGmBase;
     return clamp(h, 0.0, 4.0) * smoothstep(0.06, 0.3, ls);
 }
 // How bright a light is: its brightest channel counts, so a golden glint or a red neon is as
@@ -148,11 +159,14 @@ void main() {
         fragColor = vec4(mix(vec3(l), lin, uGlowSat) * w * min(exp2(0.5 * h), 1.6), 1.0);
         return;
     }
-    // Glints, as in 1.1: bright AND brighter than the surroundings, so sparkles on water or
-    // street lamps make stars while big bright areas don't smear. The brightest of four finer
-    // samples is used, so tiny sparkles (sun shimmer on the sea) aren't averaged away by the
-    // low resolution; coloured light counts by its brightest channel, and HDR headroom ranks
-    // real lights above white surfaces.
+    // Star / streak light, modelled on the real filter: a cross-screen grating sends a small
+    // share of ALL light into its spikes. From ordinary surfaces that share is invisible; it
+    // only shows from light far brighter than the picture can hold - the sun, lamps, glints.
+    // So the spikes are fed by the light ABOVE SDR white, read from the photo's HDR gain map (or
+    // estimated): the sun, with the most of it, makes one big dominant star, a sunlit wall
+    // makes none. Small sparkles that are bright and stand out from their surroundings (sun
+    // shimmer on water) still glint, and coloured light counts by its brightest channel.
+    // The brightest of four finer samples is used so tiny sparkles survive the low resolution.
     vec2 best = vUv;
     float bl = -1.0;
     for (int i = 0; i < 4; i++) {
@@ -163,7 +177,7 @@ void main() {
     sdr = toLin(textureLod(uSrc, best, uFineLod).rgb);
     lin = sdr * uGain;
     float hh = headroom(best, sdr);
-    l = lightLevel(lin, hh);
+    l = lightLevel(lin, 0.0);
     float around = 0.0;
     for (int i = 0; i < 8; i++) {
         float a = float(i) * 0.7853982;
@@ -171,11 +185,24 @@ void main() {
         around += lightLevel(toLin(textureLod(uSrc, vUv + o, 2.0).rgb) * uGain, 0.0);
     }
     around /= 8.0;
-    float peak = max(l - around, 0.0);
-    float k = smoothstep(uThresh, max(1.0, uThresh + 0.1), l) * smoothstep(0.02, 0.3, peak);
-    lin *= min(exp2(0.5 * hh), 2.0);
+    // Threshold: how bright (in HDR terms) a light must be before it makes a star.
+    float lh = l * exp2(hh);
+    float pass = smoothstep(uThresh, uThresh + 0.35, lh);
+    // Light beyond SDR white. The gain map compresses the real range (the sun is thousands of
+    // times a wall, the map stores a few), so the excess is expanded to rank the sun far above
+    // a sunlit window.
+    float excess = exp2(hh) - 1.0;
+    float e2 = excess * excess;
+    float hdrStar = min(e2 * e2, 12.0) * 2.2;
+    // Sparkles: small bright points standing out from their surroundings (SDR terms).
+    float sparkle = smoothstep(0.02, 0.3, max(l - around, 0.0));
+    float ks = pass * sparkle;
+    // With the photo's real HDR data, only light above the scene's own lift makes stars (as
+    // through a real filter: the sun's cores make big stars; leaves against the sky don't).
+    // Without it, bright points standing out from their surroundings stand in for that light.
+    float energy = pass * hdrStar * 1.6 + (uGmOn > 0.5 ? 0.0 : ks * ks * 1.4);
     float keep = uMaskOn > 0.5 ? 1.0 - texture(uStarMask, vUv).r : 1.0;
-    fragColor = vec4(lin * k * k * 3.0 * keep, 1.0);
+    fragColor = vec4(lin * energy * keep, 1.0);
 }
 """
 
@@ -245,13 +272,58 @@ uniform float uDecay;
 uniform vec3 uTint;
 uniform float uSpectral; // diffraction rainbow along the ray (0 = white)
 uniform float uOneSided; // 1: light trails only toward +uDir (motion), 0: both ways
+uniform float uDisperse; // natural dispersion: longer wavelengths spread further (0 = none)
+uniform float uDensOn;   // 1: each light's ray length follows its total output (density)
+uniform float uDensLod;  // mip level whose texel is about one light's extent
+uniform float uRayLod;   // mip level the rays read the light from (wider, softer rays)
+// How far a light's rays reach (fraction of the full arm): from the total light it puts out,
+// summed over its surroundings. A dense, big light (the sun) throws long rays - one big star
+// or a long anamorphic streak from its centre; a small light only twinkles.
+// Also gathers a big light's rays toward its brightest core (where it outshines its own
+// surroundings), so the sun throws one star from its centre instead of a blob of overlapping
+// stars from every pixel of its disc. Returns the reach; `core` scales the light's energy.
+float lightReach(vec2 p, vec3 s, out float core) {
+    core = 1.0;
+    if (uDensOn < 0.5) return 1.0;
+    float mean = dot(textureLod(uTex, p, uDensLod).rgb, vec3(0.2126, 0.7152, 0.0722));
+    float total = mean * exp2(2.0 * uDensLod);
+    float r = dot(s, vec3(0.2126, 0.7152, 0.0722)) / (mean + 1e-3);
+    core = clamp(r * r * 0.25, 0.0, 3.0);
+    return clamp(0.12 + 0.11 * log2(1.0 + total), 0.12, 1.0);
+}
 void main() {
+    // Diffraction (star filters, aperture blades) and anamorphic flare spread light along the
+    // ray with a power-law falloff, ~1/r^2: a bright core and a long faint tail, not the quick
+    // exponential cut-off. Light diffracts in proportion to its wavelength, so red reaches a
+    // little further than blue and a real star's rays end with a faint warm fringe.
+    float n = float(uTaps);
+    float K = uDecay * n / 0.693;   // same half-length as the old exponential ray
+    vec3 reach = vec3(1.0 + uDisperse, 1.0, 1.0 - uDisperse);
     vec3 acc = vec3(0.0);
     for (int i = 1; i <= uTaps; i++) {
         float fi = float(i);
-        float w = exp(-fi * uDecay);
-        vec3 s = texture(uTex, vUv - uDir * fi).rgb;
-        if (uOneSided < 0.5) s += texture(uTex, vUv + uDir * fi).rgb;
+        float t = fi / n;
+        float fade = 1.0 - smoothstep(0.72, 1.0, t);
+        // Each source's own ray: its reach scales the falloff; dividing by the ray's total
+        // weight keeps its energy, so a short ray is brighter near the light.
+        vec2 pa = vUv - uDir * fi;
+        vec3 sa = texture(uTex, pa).rgb;
+        float ca;
+        float ra = lightReach(pa, sa, ca);
+        float ka = K / ra;
+        vec3 xa = t * ka / reach;
+        // The ray carries the light's core read slightly blurred: a thick, soft ray as wide as
+        // the light, while only the core (not the whole bright area) feeds it.
+        vec3 s = textureLod(uTex, pa, uRayLod).rgb * ca * fade / (1.0 + xa * xa) / (n * atan(ka) / ka);
+        if (uOneSided < 0.5) {
+            vec2 pb = vUv + uDir * fi;
+            vec3 sb = texture(uTex, pb).rgb;
+            float cb;
+            float rb = lightReach(pb, sb, cb);
+            float kb = K / rb;
+            vec3 xb = t * kb / reach;
+            s += textureLod(uTex, pb, uRayLod).rgb * cb * fade / (1.0 + xb * xb) / (n * atan(kb) / kb);
+        }
         if (uSpectral > 0.0) {
             // A diffraction star splits light into colours that spread out along each arm.
             float t = fi / float(uTaps);
@@ -259,10 +331,9 @@ void main() {
             float y = dot(s, vec3(0.2126, 0.7152, 0.0722));
             s = mix(s, y * spec * 1.6, uSpectral * smoothstep(0.03, 0.2, t));
         }
-        acc += s * w;
+        acc += s;
     }
-    // Normalise by the kernel's total weight so rays carry the source's energy.
-    fragColor = vec4(acc * (1.0 - exp(-uDecay)) * uTint, 1.0);
+    fragColor = vec4(acc * uTint, 1.0);
 }
 """
 
@@ -360,7 +431,14 @@ uniform float uFocusY;
 uniform float uFocusSize;
 uniform float uSoft;
 uniform float uSwirl;
+// HDR
+uniform float uRecover;    // 0..1: read the photo's real HDR light when darkening (highlight recovery)
+uniform int uGainPass;     // 1: write the edited photo's gain map instead of its colour
+uniform float uHdrAmt;     // 0..1: how much of the photo's HDR headroom the edit keeps
+uniform float uOutLogMax;  // log2 of the output gain map's ratio max
+uniform float uAroundLod;  // mip level of a wide neighbourhood (HDR estimate without a gain map)
 $COMMON
+$GAIN
 
 const float BAND_HUES[8] = float[8](29.0, 58.0, 108.0, 142.0, 195.0, 264.0, 296.0, 333.0);
 
@@ -533,7 +611,13 @@ float sharpenDelta(vec2 uv, float y0) {
 // Detail, film colour and the user's tone/colour tools. sRGB in, sRGB out.
 vec3 grade(vec3 src, vec2 suv, bool detail) {
     vec3 lin = toLin(src) * uGain;
-    if (max(uGain.r, max(uGain.g, uGain.b)) > 1.001) lin = softClip(lin);
+    if (uRecover > 0.0 && uGmOn > 0.5) {
+        // HDR highlight recovery: when Exposure or Highlights come down, read the scene's real
+        // light from the gain map, so a clipped sky or lamp comes back with its detail and
+        // colour instead of turning flat grey. The film's shoulder below rolls it off.
+        lin = mix(lin, gmHdr(toLin(src), gmLogBoost(suv)) * uGain, uRecover);
+    }
+    if (max(uGain.r, max(uGain.g, uGain.b)) > 1.001 || uRecover > 0.0) lin = softClip(lin);
     // Detail tools compare tones before Dehaze, like their references (otherwise Dehaze would
     // read as detail everywhere and shift the whole photo's brightness).
     float y0 = toneOf(src, uGain);
@@ -702,10 +786,43 @@ vec3 diffuse(vec3 src, vec2 suv) {
     return toSrgb(max(sl + k * (spread * uGlowTint - sel), 0.0));
 }
 
+// HDR headroom of the scene at suv, in stops: from the gain map, or estimated without one
+// (light that clipped and stands far above its wide surroundings is a light source).
+float sceneHeadroom(vec2 suv) {
+    if (uGmOn > 0.5) return max(dot(gmLogBoost(suv), LUMA), 0.0);
+    vec3 sl = toLin(texture(uSrc, suv).rgb);
+    float clip = smoothstep(0.80, 0.98, max(sl.r, max(sl.g, sl.b)));
+    float around = dot(toLin(textureLod(uSrc, suv, uAroundLod).rgb), LUMA);
+    return clip * clamp(0.8 * log2((dot(sl, LUMA) + 0.02) / (around + 0.02)), 0.0, 3.0);
+}
+
+// The edited photo's gain map: the scene's own HDR headroom carried through the edit, plus the
+// light the edit adds (stars, streaks, bloom, mist, halation, Glow are light, so they shine
+// above SDR white on an HDR screen).
+float editedHeadroom(vec2 uv, vec2 suv, float circle) {
+    float L = sceneHeadroom(suv) * uHdrAmt;
+    float add = 0.0;
+    if (uStar > 0.0) add += dot(texture(uStarTex, suv).rgb, LUMA);
+    if (uBloomAmt > 0.0) add += dot(texture(uBloom, suv).rgb, LUMA) * uBloomAmt * 1.4;
+    if (uMist > 0.0) add += dot(texture(uBloom, suv).rgb, LUMA) * uMist * 1.5;
+    if (uHalation > 0.0) add += dot(texture(uHal, suv).rgb, LUMA) * uHalation * 2.0;
+    if (uGlowStyle >= 0 && uGlowStyle != 3) {
+        vec3 layer;
+        applyGlow(vec3(0.0), suv, layer);
+        add += dot(layer, LUMA) * uGlowAmt;
+    }
+    L += log2(1.0 + 1.5 * add) * uHdrAmt;
+    return clamp(L / uOutLogMax, 0.0, 1.0) * circle;
+}
+
 void main() {
     float circle;
     vec2 uv = lensUv(vUv, circle);
     vec2 suv = srcUv(uv);
+    if (uGainPass == 1) {
+        fragColor = vec4(vec3(editedHeadroom(uv, suv, circle)), 1.0);
+        return;
+    }
 
     // Lens: lateral chromatic aberration grows toward the corners.
     vec3 src;
@@ -770,11 +887,16 @@ void main() {
         lin = 1.0 - (1.0 - lin) * (1.0 - clamp(b * uBloomAmt * 1.4, 0.0, 1.0));
     }
     if (uMist > 0.0) {
-        // Black Pro-Mist: light scatters out of the highlights into a soft halo, and the
-        // scatter lifts the deepest shadows a touch, easing contrast without fogging the image.
+        // Black Pro-Mist: particles in the glass scatter a share of each light's energy into a
+        // wide soft halo around it, so the light itself eases a little as its halo forms. The
+        // black specks absorb the scatter from dark tones, so shadows stay deep (a white mist
+        // would fog them); only a faint veil eases contrast.
         vec3 b = texture(uBloom, suv).rgb;
-        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(b * uMist * 1.5, 0.0, 1.0));
-        lin = lin * (1.0 - 0.06 * uMist) + 0.012 * uMist;
+        float yl = dot(lin, LUMA);
+        float s = uMist * 0.55;
+        lin = max(lin - s * lin * smoothstep(0.35, 0.95, yl), 0.0);
+        lin = 1.0 - (1.0 - clamp(lin, 0.0, 1.0)) * (1.0 - clamp(b * s * 2.2, 0.0, 1.0));
+        lin = lin * (1.0 - 0.04 * uMist) + 0.008 * uMist;
     }
     if (uHalation > 0.0) {
         float h = dot(texture(uHal, suv).rgb, LUMA);

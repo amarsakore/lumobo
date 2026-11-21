@@ -24,6 +24,9 @@ class AppSettings private constructor(context: Context) {
     var themeMode by int("theme_mode", 0)
     /** Accent from the wallpaper (Material You) on Android 12+. */
     var dynamicAccent by bool("dynamic_accent", true)
+    /** Show HDR photos in HDR while editing (HDR screens, Android 14+). Off still uses the HDR
+     *  data for light, stars and glow, and still saves Ultra HDR. */
+    var hdrView by bool("hdr_view", true)
 
     // ── New edits
     var lastFilmId by string("last_film", "original")
