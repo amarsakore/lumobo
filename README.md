@@ -59,7 +59,7 @@
 ### Pro editing tools
 - **Light:** exposure, contrast, highlights, shadows, whites, blacks and fade, with a one-tap **Auto** (centre-weighted, keeps the mood of backlit and night shots) and point **Curves** for RGB, red, green and blue.
 - **Color:** temperature, tint, vibrance and saturation; an 8-band **HSL Mixer**; Lightroom-style **Color Grading** wheels for shadows, midtones and highlights.
-- **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Edge-aware, so sharpening and clarity never draw glowing halos.
+- **Detail:** texture, clarity, sharpen, dehaze, HDR and glow. Truly edge-aware: texture, clarity and HDR use a bilateral (edge-stopping) local mean, and sharpening finds edges with a Sobel filter and never overshoots its neighbours, so even at 100 there are no white halos around buildings, wires or birds against the sky.
 - **Effects:** grain (size and colour), halation, bloom, vignette, chromatic aberration and four light-leak styles.
 - **Lens recipes:** fisheye, circular fisheye, wide-angle, star filters that make water and lights twinkle, anamorphic and amber streaks, prism rainbows, Pro-Mist and glimmer diffusion, a swirly Helios 44, a Holga toy lens, a dreamy Velvet portrait lens, tilt-shift, soft focus and Petzval swirl. Star filters have a **threshold** (which lights sparkle), **rainbow** diffraction rays, and a **star eraser** brush to paint out lights you don't want to sparkle.
 - **Crop like Lightroom:** aspect presets (Original, Free, 1:1, 4:5, 3:4, 2:3, 9:16, 16:9, XPan…), straighten dial, vertical and horizontal perspective, flips and 90° rotation. The frame stays put: drag to slide the photo, pinch to zoom it.

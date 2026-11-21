@@ -26,11 +26,22 @@ vec3 softClip(vec3 x) {
     vec3 t = vec3(0.8);
     return mix(x, t + 0.2 * (1.0 - exp(-(x - t) / 0.2)), step(t, x));
 }
+// Tone (perceptual brightness, 0..1) of an sRGB colour at this photo's exposure. The detail
+// tools (Texture, Clarity, Sharpen, HDR) and their edge guides all measure tone the same way.
+float toneOf(vec3 s, vec3 gain) {
+    float y = dot(clamp(s, 0.0, 1.0), LUMA);
+    float g = dot(gain, LUMA);
+    if (abs(g - 1.0) < 0.001) return y;
+    float l = (y <= 0.04045 ? y / 12.92 : pow((y + 0.055) / 1.055, 2.4)) * g;
+    if (g > 1.001 && l > 0.8) l = 0.8 + 0.2 * (1.0 - exp(-(l - 0.8) / 0.2));
+    return l <= 0.0031308 ? l * 12.92 : 1.055 * pow(l, 1.0 / 2.4) - 0.055;
+}
 """
 
     /**
      * Extracts light for the low-resolution passes.
-     * 0 halation highlights, 1 bloom, 2 star/streak glints, 3 whole image, 4 haze (min channel).
+     * 0 halation highlights, 1 bloom, 2 star/streak glints, 3 whole image, 4 haze (min channel),
+     * 5 tone guide for the edge-aware Clarity and HDR.
      */
     const val PREFILTER = """#version 300 es
 precision highp float;
@@ -61,6 +72,11 @@ void main() {
     if (uMode == 1) { fragColor = vec4(lin * smoothstep(0.18, 0.95, l), 1.0); return; }
     if (uMode == 3) { fragColor = vec4(lin, 1.0); return; }
     if (uMode == 4) { fragColor = vec4(vec3(min(lin.r, min(lin.g, lin.b))), 1.0); return; }
+    if (uMode == 5) {
+        // Edge guide for Clarity and HDR: the photo's tone, exactly as the main pass measures it.
+        fragColor = vec4(vec3(toneOf(texture(uSrc, vUv).rgb, uGain)), 1.0);
+        return;
+    }
     // Glints, exactly as in 1.1: bright AND brighter than the surroundings, so sparkles on
     // water or street lamps make stars while big bright areas don't smear.
     float around = 0.0;
@@ -96,6 +112,38 @@ void main() {
         wsum += w;
     }
     fragColor = acc / wsum;
+}
+"""
+
+    /**
+     * One direction of a joint bilateral filter on tone, at fx resolution: a Gaussian whose
+     * neighbours count less the more their tone differs from this texel's in the guide, so the
+     * average stays on its own side of an edge. Writes (filtered tone, guide tone).
+     */
+    const val BILATERAL = """#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;    // tone to filter (r)
+uniform sampler2D uGuide;  // edge guide (r)
+uniform vec2 uStep;
+uniform float uSigma;
+uniform int uRadius;
+uniform float uRange;      // 1 / (2 * range sigma^2)
+void main() {
+    float gc = texture(uGuide, vUv).r;
+    float acc = 0.0;
+    float wsum = 0.0;
+    float k = -1.0 / (2.0 * uSigma * uSigma);
+    for (int i = -uRadius; i <= uRadius; i++) {
+        float fi = float(i);
+        vec2 o = vUv + uStep * fi;
+        float d = texture(uGuide, o).r - gc;
+        float w = exp(fi * fi * k - d * d * uRange);
+        acc += texture(uTex, o).r * w;
+        wsum += w;
+    }
+    fragColor = vec4(acc / wsum, gc, 0.0, 1.0);
 }
 """
 
@@ -177,7 +225,10 @@ uniform float uSharpen;
 uniform float uHdr;
 uniform float uGlow;
 uniform float uTexLod;
-uniform float uSharpLod;
+uniform sampler2D uGuide;  // the photo's tone at fx resolution, unblurred (Clarity's edge guide)
+uniform vec2 uGuideTexel;  // one fx texel, in source uv
+uniform float uClarR;      // Clarity radius (Gaussian sigma), in fx texels
+uniform sampler2D uHdrBase; // HDR's edge-aware wide tone (r) and its guide tone (g), fx resolution
 // film & optics
 uniform float uHalation;
 uniform vec3 uHalColor;
@@ -297,15 +348,97 @@ float blob(vec2 uv, vec2 c, vec2 s, float k) {
     vec2 d = (uv - c) * s;
     return exp(-dot(d, d) * k);
 }
-float srgbLuma(vec3 lin) { return dot(toSrgb(lin), LUMA); }
-// Edge-aware detail: full strength on texture, tapering at strong edges (|d| >> k) so
-// sharpening and clarity never draw glowing halos along outlines. Peaks at k / 2.
+// Soft limit: full strength on small differences, tapering for big ones. Peaks at k / 2.
 float tame(float d, float k) { return d / (1.0 + (d * d) / (k * k)); }
+
+// Tone of the source at uv, as the detail tools compare it.
+float srcTone(vec2 uv, float lod) { return toneOf(textureLod(uSrc, uv, lod).rgb, uGain); }
+
+// Edge-aware local mean of tone (a bilateral filter): rings of neighbours around uv, each
+// counting less the more its tone differs from this pixel's (y0). Neighbours across an edge,
+// much brighter or darker, are left out, so the mean follows outlines instead of bleeding
+// across them. A plain blur there makes the bright side of every outline glow white and the
+// dark side get a dark rim as Texture / Clarity go up. sigma is in texels of `texel`.
+float edgeMean(sampler2D t, bool isSrc, vec2 uv, float y0, vec2 texel, float sigma, float lod, int rings) {
+    const float RANGE = 1.0 / (2.0 * 0.06 * 0.06);
+    float gc = isSrc ? srcTone(uv, lod) : texture(t, uv).r;
+    float dc = gc - y0;
+    float wc = 0.36 * exp(-dc * dc * RANGE);
+    float acc = wc * gc;
+    float wsum = wc;
+    for (int ring = 0; ring < rings; ring++) {
+        float r = 0.6 + 0.7 * float(ring);       // ring radius, in sigmas
+        float ws = r * exp(-0.5 * r * r);        // Gaussian weight of the ring's area
+        float rot = 0.3927 * float(ring);
+        for (int i = 0; i < 8; i++) {
+            float a = float(i) * 0.7853982 + rot;
+            vec2 q = uv + vec2(cos(a), sin(a)) * (r * sigma) * texel;
+            float g = isSrc ? srcTone(q, lod) : texture(t, q).r;
+            float d = g - y0;
+            float w = ws * exp(-d * d * RANGE);
+            acc += w * g;
+            wsum += w;
+        }
+    }
+    return (acc + 1e-4 * y0) / (wsum + 1e-4);
+}
+
+// Upsamples an fx-resolution edge-aware tone (r) to this pixel, trusting only the texels whose
+// guide tone (g) matches this pixel's, so the low resolution doesn't smear it across an edge.
+float edgeUpsample(sampler2D t, vec2 uv, float y0) {
+    vec2 size = vec2(textureSize(t, 0));
+    vec2 p = uv * size - 0.5;
+    vec2 f = fract(p);
+    ivec2 i0 = ivec2(floor(p));
+    ivec2 hi = ivec2(size) - 1;
+    float acc = 0.0;
+    float wsum = 0.0;
+    for (int k = 0; k < 4; k++) {
+        ivec2 o = ivec2(k & 1, k >> 1);
+        vec2 v = texelFetch(t, clamp(i0 + o, ivec2(0), hi), 0).rg;
+        float wb = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y) + 0.001;
+        float d = v.y - y0;
+        float w = wb * exp(-d * d * 50.0);
+        acc += w * v.x;
+        wsum += w;
+    }
+    return (acc + 1e-4 * y0) / (wsum + 1e-4);
+}
+
+// Sharpening with edge detection. A Sobel filter on the 3 x 3 neighbourhood finds edges; the
+// unsharp mask is then clamped to that neighbourhood's own darkest and brightest tones, so an
+// outline gets crisper but can never overshoot into a white glow or a dark rim. Flat areas (sky,
+// skin) are left alone so their noise isn't sharpened, and the strongest outlines, already
+// crisp, get a lighter touch. Returns the change in tone.
+float sharpenDelta(vec2 uv, float y0) {
+    vec2 px = 1.25 / vec2(textureSize(uSrc, 0));
+    float n = srcTone(uv + vec2(0.0, -px.y), 0.0);
+    float s = srcTone(uv + vec2(0.0, px.y), 0.0);
+    float e = srcTone(uv + vec2(px.x, 0.0), 0.0);
+    float w = srcTone(uv + vec2(-px.x, 0.0), 0.0);
+    float ne = srcTone(uv + vec2(px.x, -px.y), 0.0);
+    float nw = srcTone(uv - px, 0.0);
+    float se = srcTone(uv + px, 0.0);
+    float sw = srcTone(uv + vec2(-px.x, px.y), 0.0);
+    float gx = (ne + 2.0 * e + se) - (nw + 2.0 * w + sw);
+    float gy = (sw + 2.0 * s + se) - (nw + 2.0 * n + ne);
+    float edge = length(vec2(gx, gy)) * 0.25;   // ~ the tone step across this pixel
+    float blur = (4.0 * y0 + 2.0 * (n + s + e + w) + ne + nw + se + sw) / 16.0;
+    float lo = min(min(min(n, s), min(e, w)), min(min(ne, nw), min(se, sw)));
+    float hi = max(max(max(n, s), max(e, w)), max(max(ne, nw), max(se, sw)));
+    lo = min(lo, y0);
+    hi = max(hi, y0);
+    float amt = uSharpen * 3.2 * smoothstep(0.006, 0.03, edge) * (1.0 - 0.45 * smoothstep(0.12, 0.4, edge));
+    return clamp(y0 + amt * (y0 - blur), lo, hi) - y0;
+}
 
 // Detail, film colour and the user's tone/colour tools. sRGB in, sRGB out.
 vec3 grade(vec3 src, vec2 suv, bool detail) {
     vec3 lin = toLin(src) * uGain;
     if (max(uGain.r, max(uGain.g, uGain.b)) > 1.001) lin = softClip(lin);
+    // Detail tools compare tones before Dehaze, like their references (otherwise Dehaze would
+    // read as detail everywhere and shift the whole photo's brightness).
+    float y0 = toneOf(src, uGain);
 
     // Dehaze: remove (or add) the veil estimated from the blurred dark channel.
     if (uDehaze > 0.0) {
@@ -324,23 +457,22 @@ vec3 grade(vec3 src, vec2 suv, bool detail) {
         float y = dot(c, LUMA);
         float dy = 0.0;
         if (uTexture != 0.0) {
-            float yb = srgbLuma(toLin(textureLod(uSrc, suv, uTexLod).rgb) * uGain);
-            dy += uTexture * 2.0 * tame(y - yb, 0.10);
+            // Fine-scale mean from the mip chain, edge-aware so outlines don't glow.
+            vec2 tx = 1.0 / vec2(textureSize(uSrc, 0));
+            float yb = edgeMean(uSrc, true, suv, y0, tx, 0.45 * exp2(uTexLod), max(uTexLod - 1.0, 0.0), 3);
+            dy += uTexture * 2.2 * tame(y0 - yb, 0.10);
         }
-        if (uSharpen > 0.0) {
-            float yb = srgbLuma(toLin(textureLod(uSrc, suv, uSharpLod).rgb) * uGain);
-            // Sharpen real edges and texture only: flat areas (sky, skin) keep their noise down.
-            float dd = y - yb;
-            dy += uSharpen * 2.6 * tame(dd, 0.06) * smoothstep(0.004, 0.025, abs(dd));
-        }
+        if (uSharpen > 0.0) dy += sharpenDelta(suv, y0);
         if (uClarity != 0.0) {
-            float yb = srgbLuma(texture(uLocal, suv).rgb);
             float mid = 1.0 - pow(abs(2.0 * y - 1.0), 2.0);
-            dy += uClarity * 1.5 * tame(y - yb, 0.14) * (0.35 + 0.65 * mid);
+            float yb = edgeMean(uGuide, false, suv, y0, uGuideTexel, uClarR, 0.0, 3);
+            dy += uClarity * 1.6 * tame(y0 - yb, 0.14) * (0.35 + 0.65 * mid);
         }
         if (uHdr != 0.0) {
-            float yw = srgbLuma(texture(uWide, suv).rgb);
-            dy += uHdr * (1.4 * tame(y - yw, 0.18) + 0.30 * (0.48 - yw));
+            // Wide edge-aware tone: lifts the shadows and tames the sky as whole areas, without
+            // the bright band a plain blur leaves along a skyline.
+            float yw = edgeUpsample(uHdrBase, suv, y0);
+            dy += uHdr * (1.4 * tame(y0 - yw, 0.18) + 0.30 * (0.48 - yw));
         }
         if (dy != 0.0) c = clamp(c + dy, 0.0, 1.0);
         if (uDehaze > 0.0) {

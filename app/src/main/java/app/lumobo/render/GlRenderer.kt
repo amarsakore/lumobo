@@ -48,6 +48,7 @@ class GlRenderer {
     private var progBlur = 0
     private var progMain = 0
     private var progStreak = 0
+    private var progBilateral = 0
     private var quadVbo = 0
 
     private var previewTex = 0
@@ -58,7 +59,8 @@ class GlRenderer {
 
     private var fxW = 0
     private var fxH = 0
-    // 0/1 halation, 2/3 bloom, 4/5 local blur, 6 star source, 7 star rays, 8/9 wide blur, 10/11 haze
+    // 0/1 halation, 2/3 bloom, 4/5 local blur, 6 star source, 7 star rays, 8/9 wide blur, 10/11 haze,
+    // 12 tone guide (edge-aware Clarity / HDR), 13/14 HDR's edge-aware wide tone
     private val fxTex = IntArray(FX_COUNT)
     private val fxFbo = IntArray(FX_COUNT)
     private var fxFloat = true
@@ -119,6 +121,7 @@ class GlRenderer {
 
         progPrefilter = program(Shaders.VERTEX, Shaders.PREFILTER)
         progBlur = program(Shaders.VERTEX, Shaders.BLUR)
+        progBilateral = program(Shaders.VERTEX, Shaders.BILATERAL)
         progMain = program(Shaders.VERTEX, Shaders.MAIN)
         progStreak = program(Shaders.VERTEX, Shaders.STREAK)
 
@@ -406,11 +409,34 @@ class GlRenderer {
             blur(fxTex[2], fxFbo[3], 1f / fxW, 0f, sigma)
             blur(fxTex[3], fxFbo[2], 0f, 1f / fxH, sigma)
         }
-        if (fx.tiltShift > 0f || fx.softFocus > 0f || fx.swirl > 0f || adj.clarity != 0f) {
+        if (adj.clarity != 0f || adj.hdr != 0f) prefilter(5, fxFbo[12])
+        if (adj.hdr != 0f) {
+            // Joint bilateral at fx resolution, guided by the tone in 12.
+            val sigma = 20f * scale
+            val stride = max(1f, sigma / 14f)
+            fun bilateral(srcTex: Int, dstFbo: Int, dx: Float, dy: Float) {
+                GLES30.glUseProgram(progBilateral)
+                GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, dstFbo)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, srcTex)
+                GLES30.glUniform1i(uniform(progBilateral, "uTex"), 0)
+                GLES30.glActiveTexture(GLES30.GL_TEXTURE1)
+                GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, fxTex[12])
+                GLES30.glUniform1i(uniform(progBilateral, "uGuide"), 1)
+                GLES30.glUniform2f(uniform(progBilateral, "uStep"), dx * stride, dy * stride)
+                GLES30.glUniform1f(uniform(progBilateral, "uSigma"), sigma / stride)
+                GLES30.glUniform1i(uniform(progBilateral, "uRadius"), min(44, ceil(sigma / stride * 3f).toInt()))
+                GLES30.glUniform1f(uniform(progBilateral, "uRange"), 1f / (2f * 0.08f * 0.08f))
+                drawQuad()
+            }
+            bilateral(fxTex[12], fxFbo[13], 1f / fxW, 0f)
+            bilateral(fxTex[13], fxFbo[14], 0f, 1f / fxH)
+        }
+        if (fx.tiltShift > 0f || fx.softFocus > 0f || fx.swirl > 0f) {
             prefilter(3, fxFbo[4])
             blurPair(4, 5, 4.5f * scale)
         }
-        if (adj.glow > 0f || adj.hdr != 0f) {
+        if (adj.glow > 0f) {
             prefilter(3, fxFbo[8])
             blurPair(8, 9, 20f * scale)
         }
@@ -482,6 +508,8 @@ class GlRenderer {
         bind(7, GLES30.GL_TEXTURE_2D, fxTex[8], "uWide")
         bind(8, GLES30.GL_TEXTURE_2D, fxTex[10], "uHaze")
         bind(9, GLES30.GL_TEXTURE_2D, curveTex, "uCurve")
+        bind(10, GLES30.GL_TEXTURE_2D, fxTex[12], "uGuide")
+        bind(11, GLES30.GL_TEXTURE_2D, fxTex[14], "uHdrBase")
         val g = gains(adj)
         GLES30.glUniform1f(uniform(p, "uLutSize"), lutSize.toFloat())
         GLES30.glUniform1f(uniform(p, "uIntensity"), adj.intensity)
@@ -502,7 +530,8 @@ class GlRenderer {
         GLES30.glUniform1f(uniform(p, "uGlow"), adj.glow)
         val srcLong = max(srcW, srcH).toFloat()
         GLES30.glUniform1f(uniform(p, "uTexLod"), (1.6f + log2(srcLong / 2048f)).coerceAtLeast(0.5f))
-        GLES30.glUniform1f(uniform(p, "uSharpLod"), 0.9f)
+        GLES30.glUniform2f(uniform(p, "uGuideTexel"), 1f / fxW, 1f / fxH)
+        GLES30.glUniform1f(uniform(p, "uClarR"), 4.5f * max(fxW, fxH) / FX_LONG_EDGE.toFloat())
         GLES30.glUniform1f(uniform(p, "uCurveOn"), if (curvesOn) 1f else 0f)
         GLES30.glUniform1f(uniform(p, "uMixerOn"), if (adj.mixerActive) 1f else 0f)
         if (adj.mixerActive) GLES30.glUniform3fv(uniform(p, "uMixer"), 8, adj.mixer.toFloatArray(), 0)
@@ -583,7 +612,7 @@ class GlRenderer {
         val sw = source.width
         val sh = source.height
         val (w, h) = outputSize(sw, sh, geo)
-        // Mip-mapped so Texture / Sharpen sample the same relative scales as the preview.
+        // Mip-mapped so Texture samples the same relative scale as the preview.
         val tex = uploadBitmap(source, mipmaps = true)
         source.recycle()
         try {
@@ -691,7 +720,7 @@ class GlRenderer {
     }
 
     companion object {
-        private const val FX_COUNT = 12
+        private const val FX_COUNT = 15
 
         /** Pixel size of the developed frame for a source of [w]x[h] under [geo]. */
         fun outputSize(w: Int, h: Int, geo: Geometry): Pair<Int, Int> {
